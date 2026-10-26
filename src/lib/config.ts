@@ -2,6 +2,7 @@
 // so builds work without secrets) and reports every missing variable at once.
 import { parseAllowlist } from "./allowlist.ts";
 import { assertSecret } from "./signed-value.ts";
+import { parseEncryptionKey } from "./token-crypto.ts";
 
 export type WebConfig = {
   appUrl: string;
@@ -23,6 +24,20 @@ function required(env: NodeJS.ProcessEnv, names: string[]): Record<string, strin
     );
   }
   return Object.fromEntries(names.map((n) => [n, env[n]!.trim()]));
+}
+
+export type GmailConfig = { clientId: string; clientSecret: string; tokenKey: Buffer };
+
+/** What background Gmail sync needs: the OAuth client and the token encryption key. */
+export function readGmailConfig(env: NodeJS.ProcessEnv = process.env): GmailConfig {
+  const v = required(env, ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TOKEN_ENCRYPTION_KEY"]);
+  let tokenKey: Buffer;
+  try {
+    tokenKey = parseEncryptionKey(v.TOKEN_ENCRYPTION_KEY);
+  } catch {
+    throw new ConfigError("TOKEN_ENCRYPTION_KEY must be 32 random bytes in base64 (a generated secret).");
+  }
+  return { clientId: v.GOOGLE_CLIENT_ID!, clientSecret: v.GOOGLE_CLIENT_SECRET!, tokenKey };
 }
 
 export function readDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {

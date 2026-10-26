@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ErrorPanel, PageHeader, StatusDot, formatIST } from "@/components/ui";
-import { getInboxConnection, getOverviewCounts, type InboxConnection, type OverviewCounts } from "@/server/overview.ts";
+import { getInboxStatus, type InboxStatus } from "@/server/gmail.ts";
+import { getOverviewCounts, type OverviewCounts } from "@/server/overview.ts";
 
 export const metadata: Metadata = { title: "Overview" };
 
@@ -9,9 +10,9 @@ const TODAY = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekd
 
 export default async function OverviewPage() {
   let counts: OverviewCounts;
-  let inbox: InboxConnection;
+  let inbox: InboxStatus | null;
   try {
-    [counts, inbox] = await Promise.all([getOverviewCounts(), getInboxConnection()]);
+    [counts, inbox] = await Promise.all([getOverviewCounts(), getInboxStatus()]);
   } catch {
     return (
       <>
@@ -26,7 +27,7 @@ export default async function OverviewPage() {
 
   const attention = counts.highPriority + counts.needsReply + counts.dueThisWeek;
   const lead = !inbox
-    ? "No inbox is connected yet, so there's nothing to sort. Gmail connection is the next part being built."
+    ? "No inbox is connected yet. Connect Gmail in Settings to start."
     : attention === 0
       ? "Nothing needs you right now."
       : `${attention} ${attention === 1 ? "thing needs" : "things need"} your attention.`;
@@ -65,17 +66,27 @@ export default async function OverviewPage() {
           {inbox ? (
             <div className="mt-3 space-y-1 text-sm">
               <p className="flex items-center gap-2">
-                <StatusDot tone={inbox.status === "connected" ? "ok" : "bad"} />
-                <span className="font-medium">{inbox.email}</span>
+                <StatusDot tone={inbox.status === "connected" ? (inbox.consecutiveFailures >= 3 ? "warn" : "ok") : "bad"} />
+                <span className="min-w-0 break-words font-medium">{inbox.email}</span>
               </p>
-              <p className="text-muted">Last checked {formatIST(inbox.last_synced_at)}</p>
-              {inbox.last_error && <p className="text-alert">{inbox.last_error}</p>}
+              <p className="text-muted">
+                {inbox.status === "connected" ? `Last checked ${formatIST(inbox.lastSyncedAt)}.` : "Needs reconnecting."}{" "}
+                {inbox.storedTotal} emails read, {inbox.storedNew} new since connecting.
+              </p>
+              <Link href={inbox.status === "connected" ? "/mail" : "/settings#gmail"} className="inline-block pt-2 font-medium underline decoration-gel decoration-2 underline-offset-4">
+                {inbox.status === "connected" ? "See synced mail" : "Reconnect in Settings"}
+              </Link>
             </div>
           ) : (
-            <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-muted">
-              <span className="mt-1.5"><StatusDot tone="idle" /></span>
-              Not connected. Once Gmail is connected, new offers show up here within minutes, even with this page closed.
-            </p>
+            <div className="mt-3 text-sm leading-relaxed text-muted">
+              <p className="flex items-start gap-2">
+                <span className="mt-1.5"><StatusDot tone="idle" /></span>
+                Not connected. Once Gmail is connected, new mail is read within a minute, even with this page closed.
+              </p>
+              <Link href="/settings#gmail" className="mt-3 inline-block font-medium text-ink underline decoration-gel decoration-2 underline-offset-4">
+                Connect Gmail
+              </Link>
+            </div>
           )}
         </div>
 

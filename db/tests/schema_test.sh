@@ -45,5 +45,14 @@ check "history is re-labelled as system after admin removal" "select 1/(count(*)
 check "deleting an opportunity removes its history" "delete from opportunities" ok
 check "no orphaned history is left" "select 1/(1-count(*))::int from activities" ok
 
+# Gmail sync (0002)
+check "only one inbox can be connected at a time" "insert into gmail_accounts(email) values ('second@gmail.com')" error
+check "a message is queued only once" "insert into gmail_fetch_queue(gmail_account_id,gmail_message_id,is_historical,source) values ('$A','q1',true,'initial_scan'),('$A','q1',false,'history')" error
+check "queue accepts a message" "insert into gmail_fetch_queue(gmail_account_id,gmail_message_id,is_historical,source) values ('$A','q1',true,'initial_scan')" ok
+check "disconnecting deletes everything from that inbox" "delete from gmail_accounts where id='$A'" ok
+check "no emails remain after disconnect" "select 1/(1-count(*))::int from emails" ok
+check "no queued messages remain after disconnect" "select 1/(1-count(*))::int from gmail_fetch_queue" ok
+check "a new inbox can connect after disconnect" "insert into gmail_accounts(email) values ('client@gmail.com')" ok
+
 echo
 [ "$fails" -eq 0 ] && echo "All schema checks passed." || { echo "$fails schema check(s) failed."; exit 1; }

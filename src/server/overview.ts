@@ -43,18 +43,3 @@ export async function getOverviewCounts(): Promise<OverviewCounts> {
     needsReview: n(r?.needsReview),
   };
 }
-
-export type InboxConnection = {
-  email: string;
-  status: string;
-  last_synced_at: Date | null;
-  last_error: string | null;
-} | null;
-
-export async function getInboxConnection(): Promise<InboxConnection> {
-  const rows = await query<NonNullable<InboxConnection>>(
-    `SELECT email, status, last_synced_at, last_error FROM gmail_accounts
-     WHERE status <> 'disconnected' ORDER BY connected_at DESC LIMIT 1`,
-  );
-  return rows[0] ?? null;
-}
