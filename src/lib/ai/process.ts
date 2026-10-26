@@ -8,13 +8,16 @@ import { callJson, ClaudeApiError } from "./anthropic.ts";
 import {
   extractionSystemPrompt,
   EXTRACT_BODY_CHARS,
+  formatDecisions,
+  type TeamDecision,
   TRIAGE_BODY_CHARS,
   triageSystemPrompt,
   userMessage,
   type CategoryInfo,
   type EmailForAi,
 } from "./prompts.ts";
-import { computePriority, EMPTY_PREFERENCES, formatMoney, type Preferences } from "./priority.ts";
+import { computePriority, formatMoney, type Preferences } from "./priority.ts";
+import { loadPreferences, rescoreOpportunity } from "./rescore.ts";
 import { mergeRedFlags, ruleRedFlags, type RedFlag } from "./redflags.ts";
 import {
   extractionSchema,
@@ -85,6 +88,8 @@ type Context = {
   categories: Array<CategoryInfo & { id: string }>;
   slugs: string[];
   prefs: Preferences;
+  /** The team's recent offer / not-offer decisions by sender, for the triage prompt. */
+  decisions: string[];
   report: AiReport;
 };
 
@@ -97,7 +102,22 @@ export async function processPendingEmails(deps: AiDeps): Promise<AiReport> {
   const categories = await query<CategoryInfo & { id: string }>(
     `SELECT id, slug, name, description FROM categories WHERE is_enabled ORDER BY sort_order, name`,
   );
-  const ctx: Context = { deps, categories, slugs: categories.map((c) => c.slug), prefs: await loadPreferences(), report };
+  const decisionRows = await query<TeamDecision>(
+    `SELECT lower(COALESCE(e.from_email, o.sender_email)) AS sender, c.new_value #>> '{}' AS decision
+     FROM corrections c
+     LEFT JOIN emails e ON e.id = c.email_id
+     LEFT JOIN opportunities o ON o.id = c.opportunity_id
+     WHERE c.field_name = 'classification'
+     ORDER BY c.created_at DESC LIMIT 50`,
+  );
+  const ctx: Context = {
+    deps,
+    categories,
+    slugs: categories.map((c) => c.slug),
+    prefs: await loadPreferences(getPool()),
+    decisions: formatDecisions(decisionRows),
+    report,
+  };
 
   const batch = await query<EmailRow>(
     `SELECT id, gmail_account_id, gmail_thread_id, in_reply_to, from_name, from_email, reply_to, to_emails, subject,
@@ -288,7 +308,7 @@ async function callChecked<T>(step: "triage" | "extract", email: EmailRow, ctx: 
   const ai = toAiEmail(email);
   const isTriage = step === "triage";
   const model = isTriage ? ctx.deps.triageModel : ctx.deps.extractModel;
-  const system = isTriage ? triageSystemPrompt(ctx.categories) : extractionSystemPrompt(ctx.categories, new Date());
+  const system = isTriage ? triageSystemPrompt(ctx.categories, ctx.decisions) : extractionSystemPrompt(ctx.categories, new Date());
   const user = userMessage(
     ai,
     isTriage ? TRIAGE_BODY_CHARS : EXTRACT_BODY_CHARS,
@@ -728,62 +748,15 @@ async function updateOpportunity(
   for (const f of newFlags) if (!flags.some((x) => x.flag === f.flag)) flags.push(f);
   const unverified = [...new Set([...opp.unverified_fields, ...v.unverified.filter((u) => changes.some((ch) => ch.field === u))])];
 
-  // Recompute timing and priority from the record as it now stands.
-  const after = await loadOpportunity(client, oppId);
-  const now = Date.now();
-  const changedDates = changes.some((ch) => ch.field === "dates");
-  const candidates = [after.reply_by_at, after.event_start_at, v.nextDeadline, changedDates ? null : opp.next_deadline_at].filter(
-    (d): d is Date => d !== null,
-  );
-  const future = candidates.filter((d) => d.getTime() >= now).sort((a, b) => a.getTime() - b.getTime());
-  const past = [after.reply_by_at, after.event_start_at, after.event_end_at, v.latestPastDeadline]
-    .filter((d): d is Date => d !== null && d.getTime() < now)
-    .sort((a, b) => a.getTime() - b.getTime());
-  const cancelled =
-    v.cancellation ||
-    (await client.query(`SELECT 1 FROM activities WHERE opportunity_id = $1 AND kind = 'cancellation_detected' LIMIT 1`, [oppId])).rowCount! > 0;
-
-  const priority = computePriority(
-    {
-      classification: opp.classification ?? triage.classification,
-      confidence: opp.confidence === null ? triage.confidence : Number(opp.confidence),
-      categorySlug: after.category_slug,
-      organization: after.organization,
-      location: after.location,
-      compensation: {
-        type: after.compensation_type,
-        status: after.compensation_status,
-        amountMin: after.amount_min === null ? null : Number(after.amount_min),
-        amountMax: after.amount_max === null ? null : Number(after.amount_max),
-        currency: after.currency,
-        verified: !unverified.includes("compensation"),
-      },
-      nextDeadline: future[0] ?? null,
-      latestPastDeadline: past.at(-1) ?? null,
-      redFlags: flags,
-      cancelled,
-      unverified,
-    },
-    ctx.prefs,
-  );
   await client.query(
     `UPDATE opportunities
-     SET next_deadline_at = $2, priority = $3, priority_score = $4, priority_reasons = $5, red_flags = $6, unverified_fields = $7,
-         organization = COALESCE(organization, $8), sender_role = COALESCE(sender_role, $9), contact_phone = COALESCE(contact_phone, $10)
+     SET red_flags = $2, unverified_fields = $3,
+         organization = COALESCE(organization, $4), sender_role = COALESCE(sender_role, $5), contact_phone = COALESCE(contact_phone, $6)
      WHERE id = $1`,
-    [
-      oppId,
-      future[0] ?? null,
-      priority.priority,
-      priority.score,
-      JSON.stringify(priority.reasons),
-      JSON.stringify(flags),
-      unverified,
-      nul(v.text.organization.value),
-      nul(v.text.sender_role.value),
-      nul(v.text.contact_phone.value),
-    ],
+    [oppId, JSON.stringify(flags), unverified, nul(v.text.organization.value), nul(v.text.sender_role.value), nul(v.text.contact_phone.value)],
   );
+  // Timing and priority are recomputed from the record as it now stands.
+  await rescoreOpportunity(client, oppId, ctx.prefs);
 
   const role = v.cancellation
     ? "cancellation"
@@ -807,28 +780,6 @@ async function updateOpportunity(
 }
 
 // --- Helpers -------------------------------------------------------------------------------------------
-
-async function loadPreferences(): Promise<Preferences> {
-  const rows = await query<{ key: string; value: unknown }>(`SELECT key, value FROM preferences`);
-  const get = (k: string) => rows.find((r) => r.key === k)?.value;
-  const list = (k: string) => {
-    const v = get(k);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  };
-  const fees = get("minimum_fee_inr");
-  const minimumFeeInr: Record<string, number> = {};
-  if (fees && typeof fees === "object" && !Array.isArray(fees)) {
-    for (const [k, val] of Object.entries(fees as Record<string, unknown>)) if (typeof val === "number" && val > 0) minimumFeeInr[k] = val;
-  }
-  return {
-    ...EMPTY_PREFERENCES,
-    preferredCategories: list("preferred_categories"),
-    preferredBrands: list("preferred_brands"),
-    avoidedBrands: list("avoided_brands"),
-    preferredLocations: list("preferred_locations"),
-    minimumFeeInr,
-  };
-}
 
 async function inTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect();

@@ -62,7 +62,31 @@ function categoryList(categories: CategoryInfo[]): string {
   return categories.map((c) => `- ${c.slug}: ${c.name}${c.description ? `. ${c.description}` : ""}`).join("\n");
 }
 
-export function triageSystemPrompt(categories: CategoryInfo[]): string {
+export type TeamDecision = { sender: string | null; decision: string };
+
+const FREE_MAIL = new Set(["gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "outlook.com", "hotmail.com", "icloud.com", "rediffmail.com", "live.com"]);
+
+/**
+ * The team's own offer / not-offer decisions, as sender → decision lines for the triage prompt.
+ * Only sender addresses or domains are used (strictly sanitised), never words from emails,
+ * so a correction can't carry instructions into the prompt. Newest decision per sender wins.
+ */
+export function formatDecisions(rows: TeamDecision[], max = 12): string[] {
+  const seen = new Map<string, string>();
+  for (const r of rows) {
+    const email = (r.sender ?? "").trim().toLowerCase();
+    if (!/^[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,24}$/.test(email)) continue;
+    const domain = email.slice(email.lastIndexOf("@") + 1);
+    const key = FREE_MAIL.has(domain) ? email : domain; // a Gmail address speaks only for itself
+    const label = r.decision === "new_opportunity" ? "offers or work invitations" : r.decision === "unrelated" ? "not offers" : null;
+    if (!label || seen.has(key)) continue;
+    seen.set(key, label);
+    if (seen.size >= max) break;
+  }
+  return [...seen].map(([key, label]) => `- Mail from ${key}: her team marked these as ${label}.`);
+}
+
+export function triageSystemPrompt(categories: CategoryInfo[], decisions: string[] = []): string {
   return `You sort the inbox of an Indian actress and content creator so her team can find work opportunities.
 
 ${SAFETY}
@@ -81,7 +105,14 @@ Generic job alerts, platform digests and marketing are not opportunities for her
 Use confidence below 0.7 when you are unsure.
 
 Categories:
-${categoryList(categories)}`;
+${categoryList(categories)}${
+    decisions.length
+      ? `
+
+Her team's recent decisions about particular senders. Follow them unless the email is clearly different:
+${decisions.join("\n")}`
+      : ""
+  }`;
 }
 
 export function extractionSystemPrompt(categories: CategoryInfo[], today: Date): string {

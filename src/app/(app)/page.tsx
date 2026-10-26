@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ErrorPanel, PageHeader, StatusDot, formatIST } from "@/components/ui";
 import { getInboxStatus, type InboxStatus } from "@/server/gmail.ts";
 import { getOverviewCounts, type OverviewCounts } from "@/server/overview.ts";
+import { listOpportunities, listRecentChanges, type OpportunityCard, type RecentChange } from "@/server/opportunities.ts";
+import { formatDay, payText, relativeDay } from "@/lib/format.ts";
 
 export const metadata: Metadata = { title: "Overview" };
 
@@ -11,8 +13,15 @@ const TODAY = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekd
 export default async function OverviewPage() {
   let counts: OverviewCounts;
   let inbox: InboxStatus | null;
+  let now: OpportunityCard[];
+  let changes: RecentChange[];
   try {
-    [counts, inbox] = await Promise.all([getOverviewCounts(), getInboxStatus()]);
+    [counts, inbox, now, changes] = await Promise.all([
+      getOverviewCounts(),
+      getInboxStatus(),
+      listOpportunities({ attention: true, limit: 6 }),
+      listRecentChanges(6),
+    ]);
   } catch {
     return (
       <>
@@ -60,6 +69,59 @@ export default async function OverviewPage() {
         ))}
       </section>
 
+      <section className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <h2 className="font-display text-xl font-semibold">Needs you now</h2>
+          {now.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">
+              Nothing urgent. High-priority offers, anything due within a week, and unread cards show up here.
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+              {now.map((o) => (
+                <li key={o.id}>
+                  <Link href={`/opportunities/${o.id}`} className="grid gap-1 px-5 py-4 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2">
+                        {o.priority === "high" && <span className="rounded-full bg-gel px-2 py-0.5 text-xs font-semibold">High</span>}
+                        {o.priority === "needs_review" && <span className="rounded-full border border-alert/60 px-2 py-0.5 text-xs text-alert">Check</span>}
+                        {!o.is_read && <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-semibold text-paper">Unread</span>}
+                        <span className="truncate font-medium">{o.title}</span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-sm text-muted">
+                        {[o.organization ?? o.sender_name, payText(o)].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    <span className="text-sm tabular-nums text-muted sm:text-right">
+                      {o.next_deadline_at ? `Due ${relativeDay(o.next_deadline_at)}` : ""}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="min-w-0">
+          <h2 className="font-display text-xl font-semibold">Recent changes</h2>
+          {changes.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">When a brand changes a fee or date, cancels, or replies, it's listed here.</p>
+          ) : (
+            <ul className="mt-3 space-y-3 text-sm">
+              {changes.map((c, i) => (
+                <li key={i} className="leading-relaxed">
+                  <Link href={`/opportunities/${c.opportunity_id}`} className="font-medium underline-offset-4 hover:underline">
+                    {c.title}
+                  </Link>
+                  <span className="block text-muted">
+                    {describeChange(c)} · {formatDay(c.created_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
       <section className="mt-10 grid gap-6 md:grid-cols-2">
         <div className="rounded-2xl border border-line bg-surface p-6">
           <h2 className="font-display text-xl font-semibold">Inbox</h2>
@@ -104,4 +166,20 @@ export default async function OverviewPage() {
       </section>
     </>
   );
+}
+
+function describeChange(c: RecentChange): string {
+  const d = c.detail;
+  switch (c.kind) {
+    case "change_detected":
+      return `${String(d.field ?? "Details").replace("_", " ")} changed: ${String(d.from)} → ${String(d.to)}`;
+    case "cancellation_detected":
+      return "They cancelled or withdrew it";
+    case "status_changed":
+      return "They replied, so it's your turn";
+    case "created":
+      return "New offer found";
+    default:
+      return c.kind.replace(/_/g, " ");
+  }
 }

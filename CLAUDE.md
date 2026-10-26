@@ -20,7 +20,8 @@ Private opportunity console: watches one actress's Gmail, turns offers into trac
 
 - `src/lib` is framework-free and imported with relative `.ts` paths so scripts can run it directly on Node 22 (type stripping). No enums, namespaces or parameter properties (`erasableSyntaxOnly`). Code that unit tests import must not import `pg`.
 - Next.js code imports with the `@/` alias.
-- Every protected page or route calls `requireAdmin()`.
+- Every protected page or route calls `requireAdmin()`. Dashboard changes are form posts to `/api/opportunities/[id]` or `/api/emails/[id]` (with `isCrossSite` and `isUuid` guards); the logic lives in `src/server/actions.ts`, runs in one transaction, logs an activity with the admin, and ends with `rescoreOpportunity`.
+- Inside a transaction, use only that transaction's client: never call `query()` / `getPool()` while holding one (it can exhaust the small pool and stall).
 - Schema changes go in a new `db/migrations/NNNN_name.sql`; never edit an applied migration (the runner checks checksums).
-- Add a check to `db/tests/schema_test.sh` for every new database rule, and a smoke check to `scripts/smoke.sh` for every new route.
+- Add a check to `db/tests/schema_test.sh` for every new database rule, and an end-to-end check (`scripts/smoke.sh` or `scripts/test/*-e2e.sh`) for every new route or action.
 - UI copy: plain, sentence case, says what happens; empty states say what will appear and how.

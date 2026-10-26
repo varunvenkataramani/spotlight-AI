@@ -32,6 +32,8 @@ export type PriorityInput = {
   redFlags: RedFlag[];
   cancelled: boolean;
   unverified: string[];
+  /** An admin checked it and confirmed it's genuine: warnings stay visible but no longer force a review. */
+  reviewCleared?: boolean;
 };
 
 export type PriorityResult = { priority: "high" | "medium" | "low" | "needs_review"; score: number; reasons: string[] };
@@ -135,7 +137,11 @@ export function computePriority(input: PriorityInput, prefs: Preferences, now: D
 
   const tier: PriorityResult["priority"] = score >= 70 ? "high" : score >= 45 ? "medium" : "low";
 
-  // Things a person should look at before trusting the sorting.
+  // Things a person should look at before trusting the sorting (unless a person already has).
+  if (input.reviewCleared) {
+    reasons.unshift("Checked by her team");
+    return { priority: tier, score, reasons };
+  }
   if (input.classification === "suspicious" || high.length > 0) {
     reasons.unshift("Check before replying: possible scam signs");
     return { priority: "needs_review", score, reasons };
