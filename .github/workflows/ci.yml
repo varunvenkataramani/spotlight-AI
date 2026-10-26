@@ -29,6 +29,7 @@ jobs:
       GOOGLE_CLIENT_SECRET: ci-secret
       SESSION_SECRET: ci-session-secret-that-is-at-least-32-chars
       TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      CRON_SECRET: ci-cron-secret-that-is-at-least-32-characters
       NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
@@ -62,7 +63,10 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-      - name: Smoke test (web app + worker)
+      - name: Migrations skip on Vercel preview deploys
+        run: VERCEL_ENV=preview DATABASE_URL=postgresql://invalid npm run migrate | grep -q "Skipping migrations"
+
+      - name: Smoke test (web app + scheduled runs)
         run: bash scripts/smoke.sh
 
       - name: Save lockfile

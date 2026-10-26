@@ -11,12 +11,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "node worker/index.ts",
     "migrate": "node scripts/migrate.ts",
     "test": "node --test \"src/**/*.test.ts\"",
     "test:schema": "bash db/tests/schema_test.sh",
     "typecheck": "tsc --noEmit",
-    "gen:secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\""
+    "gen:secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+    "vercel-build": "npm run migrate && next build"
   },
   "dependencies": {
     "next": "^16.0.0",

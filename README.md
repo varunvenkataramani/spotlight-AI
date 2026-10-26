@@ -4,12 +4,21 @@ A private opportunity console for an actress and her manager. Spotlight watches 
 
 The full product plan lives in the build plan doc. This README covers running and deploying the code.
 
+## How it runs
+
+Everything runs on **Vercel** with a **Supabase** Postgres database; there is no separate server to keep alive.
+
+- **Pages and API routes** run on Vercel.
+- **Background work** (Gmail sync, AI processing, reminders) runs in `/api/cron/tick`, which Supabase's built-in scheduler (pg_cron) calls every minute with a shared secret. A database lock stops two runs from overlapping.
+- **Gmail push notifications** (from Milestone 2) go straight to a webhook route on Vercel.
+- **Database migrations** run automatically on every production deploy (`vercel-build`).
+
 ## What works today (Milestone 1)
 
 - Google sign-in for exactly two admins (allow-list), with PKCE, signed httpOnly cookies, and a re-check on every request.
 - The complete database schema, with safety rules enforced by Postgres itself: one row per Gmail message, an append-only activity log, drafts that can't be marked sent without a recorded approval, and de-duplicated alerts.
 - Dashboard shell: Overview (live counts from the database), Opportunities, Needs review and Settings (system status and admins). Empty states say what will appear and when.
-- An always-on background worker that checks in every minute; Settings and `/api/health` show if it stops.
+- Scheduled background runs every minute; Settings and `/api/health` show if they stop.
 - Automated checks on every push (see `.github/workflows/ci.yml`).
 
 Not built yet: Gmail connection (Milestone 2), the AI pipeline (3), the full dashboard (4), replies and alerts (5), and the Claude connector (6).
@@ -19,86 +28,75 @@ Not built yet: Gmail connection (Milestone 2), the AI pipeline (3), the full das
 | Path | What it is |
 | --- | --- |
 | `src/app` | Next.js pages and API routes |
-| `src/lib` | Framework-free code: config, database, encryption, sign-in checks |
+| `src/lib` | Framework-free code: config, database, encryption, sign-in checks, scheduled work |
 | `src/server` | Server-only helpers used by pages: session, queries |
-| `worker/` | The background worker (`npm run worker`) |
 | `db/migrations` | SQL migrations, applied in order by `npm run migrate` |
+| `db/setup` | One-time Supabase setup (the scheduler) |
 | `db/tests` | Checks that the database rules hold |
 | `scripts/` | Migration runner and the end-to-end smoke test |
 
 ## Setup
 
-You need Node.js 22.18 or newer and a Postgres 16 database (Supabase works).
+### 1. Google Cloud
 
-### 1. Google sign-in client
+1. In [Google Cloud Console](https://console.cloud.google.com), create a project.
+2. Open **Google Auth Platform** (search for it in the top bar). Set it up as **External**, leave it in **Testing**, and under **Audience > Test users** add both admin Google accounts and the Gmail being connected.
+3. Enable the **Gmail API** and **Cloud Pub/Sub API** (used from Milestone 2).
+4. After the first Vercel deploy (step 3), open **Google Auth Platform > Clients > Create client**, type **Web application**, with the authorised redirect URI `https://YOUR-APP.vercel.app/api/auth/callback`. Copy the client ID and secret into Vercel.
 
-1. In [Google Cloud Console](https://console.cloud.google.com), create a project (for example `spotlight`).
-2. Open **APIs & Services > OAuth consent screen**. Choose **External**, fill in the app name and support email, and leave it in **Testing**.
-3. Under **Test users**, add both admin Google accounts and the test Gmail.
-4. Open **APIs & Services > Credentials > Create credentials > OAuth client ID**, type **Web application**.
-5. Add these **Authorised redirect URIs**:
-   - `http://localhost:3000/api/auth/callback` (local development)
-   - `https://YOUR-DOMAIN/api/auth/callback` (production, once you have it)
-6. Copy the client ID and client secret into your environment.
+### 2. Database (Supabase)
 
-The Gmail API and Pub/Sub are added to the same project in Milestone 2.
+Create a Supabase project. Under **Connect > Direct > Session pooler**, copy the connection string (port **5432**) into `DATABASE_URL`. Optionally put the database's SSL certificate (Project settings > Database) in `DATABASE_CA_CERT` so the server certificate is fully verified.
 
-### 2. Database
+Don't create tables yourself: the first production deploy applies `db/migrations` automatically.
 
-Create a Supabase project. In **Project settings > Database**, copy the connection string that uses port 5432 (direct or session pooler) into `DATABASE_URL`. Optionally download the SSL certificate and put its contents in `DATABASE_CA_CERT`, so the connection's certificate is fully verified.
+### 3. Vercel
 
-Then apply the schema:
+Import the GitHub repository and set the environment variables below (Production). The first deploy creates the tables and gives you the web address for step 1.4 and `APP_URL`.
 
-```bash
-npm run migrate
+| Variable | Purpose |
+| --- | --- |
+| `APP_URL` | Public address, e.g. `https://spotlight-xyz.vercel.app` (no trailing slash) |
+| `DATABASE_URL` | Supabase session-pooler connection string |
+| `DATABASE_CA_CERT` | Optional: CA certificate for full TLS verification |
+| `ADMIN_EMAILS` | The two admin Google accounts, comma-separated |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth client from step 1.4 |
+| `SESSION_SECRET` | Signs session cookies |
+| `TOKEN_ENCRYPTION_KEY` | Encrypts Gmail tokens (used from Milestone 2) |
+| `CRON_SECRET` | Shared secret for the scheduler's calls to `/api/cron/tick` |
+
+Each secret is 32 random bytes in base64, a different value for each. Generate one with `npm run gen:secret`, or in any browser console:
+
+```js
+btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
 ```
 
-It's safe to run on every deploy; it only applies new migrations.
+Vercel's Hobby plan is for personal, non-commercial use. Move to Pro before running Spotlight for a client.
 
-### 3. Environment variables
+### 4. The scheduler (once)
 
-Copy `.env.example` to `.env.local` and fill it in. Generate the two secrets with:
+Open `db/setup/supabase_scheduler.sql`, replace `PASTE_CRON_SECRET_HERE` and `YOUR-APP.vercel.app`, and run it in **Supabase > SQL Editor**. Within two minutes, **Settings** in Spotlight shows background jobs as running and `/api/health` answers `"ok": true`.
 
-```bash
-npm run gen:secret   # run twice: once for SESSION_SECRET, once for TOKEN_ENCRYPTION_KEY
-```
-
-| Variable | Used by | Purpose |
-| --- | --- | --- |
-| `APP_URL` | web | Public address, no trailing slash |
-| `DATABASE_URL` | web, worker | Postgres connection string |
-| `DATABASE_CA_CERT` | web, worker | Optional: CA certificate for full TLS verification |
-| `ADMIN_EMAILS` | web | The two admin Google accounts, comma-separated |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | web | OAuth client from step 1 |
-| `SESSION_SECRET` | web | Signs session cookies |
-| `TOKEN_ENCRYPTION_KEY` | web, worker | Encrypts Gmail tokens (used from Milestone 2) |
-
-Never commit `.env.local`. In production, set these in the hosting dashboards only.
-
-### 4. Run locally
+### 5. Run locally (optional)
 
 ```bash
+cp .env.example .env.local   # fill it in; APP_URL=http://localhost:3000
 npm install
 npm run migrate
-npm run dev        # web app on http://localhost:3000
-npm run worker     # in a second terminal
+npm run dev
+# trigger a background run by hand:
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/tick
 ```
 
-## Deploying
-
-- **Web app: Vercel.** Import the GitHub repo, add the environment variables, deploy. Set `APP_URL` to the Vercel domain (or your own) and add that domain's callback URL to the Google OAuth client.
-- **Worker: Railway or Render.** Create a service from the same repo with start command `npm run worker`, and give it `DATABASE_URL` (plus `DATABASE_CA_CERT` and `TOKEN_ENCRYPTION_KEY`). It must run all the time; it doesn't need a public port.
-- **Migrations:** run `npm run migrate` against production before deploying code that needs a new migration (Railway's pre-deploy command works well for this).
-
-After deploying, open `/settings`: the database and worker should both show green, and `/api/health` should answer `"ok": true`.
+For local sign-in, add `http://localhost:3000/api/auth/callback` to the Google client's redirect URIs.
 
 ## Checks
 
 ```bash
-npm test             # unit tests for encryption, cookies, allow-list and Google sign-in
-npm run test:schema  # database rule checks (fresh migrated database in DATABASE_URL)
+npm test               # unit tests: encryption, cookies, allow-list, scheduler secret, Google sign-in
+npm run test:schema    # database rule checks (fresh migrated database in DATABASE_URL)
 npm run typecheck
-bash scripts/smoke.sh  # after npm run build: starts web + worker and probes them
+bash scripts/smoke.sh  # after npm run build: starts the app and probes it end to end
 ```
 
 All of these run on every push in GitHub Actions.

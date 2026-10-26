@@ -17,12 +17,12 @@ export default async function SettingsPage() {
   }
   const lastLogin = new Map(admins.map((a) => [a.email, a.last_login_at]));
 
-  const workerText = {
-    ok: `Running. Last check-in ${formatIST(health.workerLastBeatAt)}.`,
-    stale: `Not responding since ${formatIST(health.workerLastBeatAt)}. Restart the worker service.`,
-    never_seen: "Never started. Deploy and start the worker service (npm run worker).",
+  const schedulerText = {
+    ok: `Running every minute. Last run ${formatIST(health.schedulerLastRunAt)}.`,
+    stale: `No run since ${formatIST(health.schedulerLastRunAt)}. Check the spotlight-tick job in Supabase (Integrations > Cron).`,
+    never_seen: "Hasn't run yet. Set up the spotlight-tick job in Supabase (README, step 5).",
     unknown: "Unknown until the database is reachable.",
-  }[health.worker];
+  }[health.scheduler];
 
   return (
     <>
@@ -33,19 +33,19 @@ export default async function SettingsPage() {
         <dl className="mt-4 divide-y divide-line text-sm">
           <div className="flex items-start gap-3 py-3">
             <StatusDot tone={health.database === "ok" ? "ok" : "bad"} />
-            <dt className="w-24 shrink-0 font-medium">Database</dt>
+            <dt className="w-32 shrink-0 font-medium">Database</dt>
             <dd className="text-muted">
               {health.database === "ok" ? "Connected." : `Can't connect: ${health.databaseError}`}
             </dd>
           </div>
           <div className="flex items-start gap-3 py-3">
-            <StatusDot tone={health.worker === "ok" ? "ok" : health.worker === "stale" ? "bad" : "warn"} />
-            <dt className="w-24 shrink-0 font-medium">Worker</dt>
-            <dd className="text-muted">{workerText}</dd>
+            <StatusDot tone={health.scheduler === "ok" ? "ok" : health.scheduler === "stale" ? "bad" : "warn"} />
+            <dt className="w-32 shrink-0 font-medium">Background jobs</dt>
+            <dd className="text-muted">{schedulerText}</dd>
           </div>
           <div className="flex items-start gap-3 py-3">
             <StatusDot tone={inbox ? (inbox.status === "connected" ? "ok" : "bad") : "idle"} />
-            <dt className="w-24 shrink-0 font-medium">Gmail</dt>
+            <dt className="w-32 shrink-0 font-medium">Gmail</dt>
             <dd className="text-muted">{inbox ? `${inbox.email}, ${inbox.status.replace("_", " ")}.` : "Not connected yet."}</dd>
           </div>
         </dl>

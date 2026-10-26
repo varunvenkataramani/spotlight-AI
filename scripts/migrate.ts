@@ -1,7 +1,7 @@
 // Applies db/migrations/*.sql in order, each in its own transaction, exactly once.
 // Safe to run on every deploy: an advisory lock stops two runs overlapping, and a
 // checksum stops an already-applied migration from being silently edited.
-// Usage: DATABASE_URL=... npm run migrate
+// Usage: DATABASE_URL=... npm run migrate   (Vercel runs it automatically via "vercel-build")
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -13,6 +13,12 @@ const MIGRATIONS_DIR = path.join(import.meta.dirname, "..", "db", "migrations");
 const LOCK_ID = 727_001; // arbitrary, unique to Spotlight migrations
 
 async function main() {
+  // On Vercel this runs before every build. Only production deploys may change the database;
+  // preview deploys of a branch must not alter the live schema.
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") {
+    console.log(`Skipping migrations on a ${process.env.VERCEL_ENV} deploy.`);
+    return;
+  }
   const connectionString = readDatabaseUrl();
   const client = new pg.Client({ connectionString, ssl: sslFor(connectionString) });
   await client.connect();

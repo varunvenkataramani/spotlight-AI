@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const health = await getSystemHealth();
-  const ok = health.database === "ok" && health.worker === "ok";
+  const ok = health.database === "ok" && health.scheduler === "ok";
   return NextResponse.json(
-    { ok, database: health.database, worker: health.worker, checkedAt: new Date().toISOString() },
+    { ok, database: health.database, scheduler: health.scheduler, checkedAt: new Date().toISOString() },
     { status: ok ? 200 : 503, headers: { "cache-control": "no-store" } },
   );
 }

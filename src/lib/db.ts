@@ -1,4 +1,4 @@
-// One shared Postgres connection pool for the web app and the worker.
+// One shared Postgres connection pool per server instance (pages, API routes, scheduled runs).
 import pg from "pg";
 import type { QueryResultRow } from "pg";
 import { readDatabaseUrl } from "./config.ts";
@@ -22,8 +22,9 @@ export function getPool(): pg.Pool {
     const connectionString = readDatabaseUrl();
     globalRef.__spotlightPool = new pg.Pool({
       connectionString,
-      max: Number(process.env.DATABASE_POOL_MAX ?? 5),
-      idleTimeoutMillis: 30_000,
+      // Serverless instances are many and short-lived: keep each one's share of connections small.
+      max: Number(process.env.DATABASE_POOL_MAX ?? 3),
+      idleTimeoutMillis: 10_000,
       ssl: sslFor(connectionString),
     });
   }

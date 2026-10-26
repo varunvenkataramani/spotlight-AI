@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { decryptSecret, encryptSecret, parseEncryptionKey } from "./token-crypto.ts";
 import { createSignedValue, readSignedValue } from "./signed-value.ts";
 import { isAllowedAdmin, parseAllowlist } from "./allowlist.ts";
+import { isAuthorizedBearer } from "./bearer.ts";
 import {
   buildSignInUrl,
   codeChallengeFor,
@@ -102,6 +103,23 @@ test("allow-list ignores case, spaces and junk entries", () => {
   assert.ok(!isAllowedAdmin("stranger@example.com", list));
   assert.ok(!isAllowedAdmin(undefined, list));
   assert.ok(!isAllowedAdmin("anyone@x.com", parseAllowlist(undefined)));
+});
+
+// --- Scheduler secret ----------------------------------------------------------
+
+test("scheduler calls need the exact bearer secret", () => {
+  const secret = "s".repeat(40);
+  assert.ok(isAuthorizedBearer(`Bearer ${secret}`, secret));
+  assert.ok(!isAuthorizedBearer(`Bearer ${secret}x`, secret));
+  assert.ok(!isAuthorizedBearer(`bearer ${secret}`, secret));
+  assert.ok(!isAuthorizedBearer(secret, secret));
+  assert.ok(!isAuthorizedBearer(null, secret));
+});
+
+test("a missing or short scheduler secret refuses every call", () => {
+  assert.ok(!isAuthorizedBearer("Bearer ", undefined));
+  assert.ok(!isAuthorizedBearer("Bearer ", ""));
+  assert.ok(!isAuthorizedBearer("Bearer short", "short"));
 });
 
 // --- Google sign-in ------------------------------------------------------------

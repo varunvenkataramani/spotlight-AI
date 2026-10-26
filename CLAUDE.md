@@ -10,9 +10,14 @@ Private opportunity console: watches one actress's Gmail, turns offers into trac
 - Dates, statuses, priority scores, deduplication and alerts are deterministic code, not model output.
 - No email content, tokens or phone numbers in logs.
 
+## Architecture
+
+- Everything runs on Vercel + Supabase. No always-on worker: background work lives in `src/lib/scheduler.ts` (`runTick`), called every minute by Supabase pg_cron via `/api/cron/tick` with `CRON_SECRET`. Keep each run well under 60 seconds; do work in small batches and leave the rest for the next tick.
+- Migrations run in `vercel-build` on production deploys only.
+
 ## Conventions
 
-- `src/lib` is framework-free and imported with relative `.ts` paths so the worker can run it directly on Node 22 (type stripping). No enums, namespaces or parameter properties (`erasableSyntaxOnly`).
+- `src/lib` is framework-free and imported with relative `.ts` paths so scripts can run it directly on Node 22 (type stripping). No enums, namespaces or parameter properties (`erasableSyntaxOnly`). Code that unit tests import must not import `pg`.
 - Next.js code imports with the `@/` alias.
 - Every protected page or route calls `requireAdmin()`.
 - Schema changes go in a new `db/migrations/NNNN_name.sql`; never edit an applied migration (the runner checks checksums).
