@@ -51,7 +51,8 @@ email_id() { sql "SELECT id FROM emails WHERE gmail_message_id = '$1'"; }
 OFFER=$(opp_for d-offer); SCAM=$(opp_for d-scam); DUP=$(opp_for d-dup)
 [ -n "$OFFER" ] && [ -n "$SCAM" ] && [ -n "$DUP" ] && pass "pipeline made the cards to work with" || { fail "setup: offer=$OFFER scam=$SCAM dup=$DUP"; exit 1; }
 
-ADMIN_ID=$(sql "INSERT INTO users (email, name) VALUES ('manager@example.com', 'Varun') ON CONFLICT (email) DO UPDATE SET name = 'Varun' RETURNING id")
+sql "INSERT INTO users (email, name) VALUES ('manager@example.com', 'Varun') ON CONFLICT (email) DO UPDATE SET name = 'Varun'" > /dev/null
+ADMIN_ID=$(sql "SELECT id FROM users WHERE email = 'manager@example.com'")
 SESSION="__Host-spotlight_session=$(node scripts/test/make-session.ts "$ADMIN_ID" manager@example.com)"
 page() { curl -s --max-time 30 -H "Cookie: $SESSION" "$BASE$1"; }
 # post <path> field=value ...  → prints "<status> <redirect>"

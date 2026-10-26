@@ -41,16 +41,16 @@ export function ActionForm({
 
 /** Where a value came from: the email's own words, a person's correction, or a warning that it couldn't be matched. */
 export function Source({ source, unverified }: { source?: FieldSource; unverified: boolean }) {
-  if (source?.corrected_by_name) return <p className="mt-1 text-xs text-muted">Corrected by {source.corrected_by_name}</p>;
+  if (source?.corrected_by_name) return <p className="mt-1 text-xs text-muted">{`Corrected by ${source.corrected_by_name}`}</p>;
   if (unverified || (source && !source.is_verified)) {
     return (
       <p className="mt-1 text-xs text-alert">
         Couldn't match this to the email's exact words. Check it before relying on it.
-        {source?.source_quote && <span className="text-muted"> The AI quoted: “{source.source_quote}”</span>}
+        {source?.source_quote && <span className="text-muted">{` The AI quoted: “${source.source_quote}”`}</span>}
       </p>
     );
   }
-  if (source?.source_quote) return <p className="mt-1 text-xs text-muted">From the email: “{source.source_quote}”</p>;
+  if (source?.source_quote) return <p className="mt-1 text-xs text-muted">{`From the email: “${source.source_quote}”`}</p>;
   return null;
 }
 
