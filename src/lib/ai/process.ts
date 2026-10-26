@@ -30,7 +30,7 @@ import { normalizeForMatch, TEXT_FIELDS, verifyExtraction, type VerifiedExtracti
 
 export const MAX_AI_ATTEMPTS = 3;
 const BATCH = 16;
-const CONCURRENCY = 4;
+const CONCURRENCY = 2; // stays below the connection pool size (the scheduler holds one connection for its lock)
 const CONFIDENT = 0.7;
 const OPEN = `('new','reviewed','interested','needs_information','reply_drafted','awaiting_my_response','awaiting_their_response','in_negotiation','confirmed','accepted')`;
 
@@ -352,15 +352,17 @@ async function findLinkedOpportunity(email: EmailRow): Promise<string | null> {
 
 type Candidate = { id: string; title: string; organization: string | null };
 
-async function openOpportunitiesFromSender(email: EmailRow): Promise<Candidate[]> {
+/** Open offers from the same sender. Inside a transaction, pass its client: never take a second connection while holding one. */
+async function openOpportunitiesFromSender(email: EmailRow, client?: pg.PoolClient): Promise<Candidate[]> {
   if (!email.from_email) return [];
-  return query<Candidate>(
+  const result = await (client ?? getPool()).query<Candidate>(
     `SELECT id, title, organization FROM opportunities
      WHERE gmail_account_id = $1 AND lower(sender_email) = lower($2) AND status IN ${OPEN}
        AND last_activity_at > now() - interval '120 days'
      ORDER BY last_activity_at DESC LIMIT 5`,
     [email.gmail_account_id, email.from_email],
   );
+  return result.rows;
 }
 
 function words(s: string): Set<string> {
@@ -424,7 +426,7 @@ async function createOpportunity(
 
   // A possible duplicate is only suggested for an admin to confirm; nothing is merged automatically.
   let duplicateOf: string | null = null;
-  for (const c of await openOpportunitiesFromSender(email)) {
+  for (const c of await openOpportunitiesFromSender(email, client)) {
     if (looksLikeSameOffer({ title: v.title, organization: nul(v.text.organization.value) }, c)) {
       duplicateOf = c.id;
       break;

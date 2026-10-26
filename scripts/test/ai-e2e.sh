@@ -13,7 +13,7 @@ fail() {
   return 0
 }
 sql() { psql "$DATABASE_URL" -tA -c "$1"; }
-tick() { curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick"; }
+tick() { curl -s --max-time 75 -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick" || echo '{"tick":"timed out"}'; }
 
 for _ in $(seq 1 20); do curl -s -o /dev/null "$BASE/login" || break; sleep 1; done
 if curl -s -o /dev/null "$BASE/login"; then echo "FAIL  port 3000 is still in use by another server"; exit 1; fi
@@ -89,7 +89,7 @@ sql "SELECT processing_error FROM emails WHERE gmail_message_id = 'm-garbage'" |
 [ "$(sql "SELECT count(*) FROM ai_usage u JOIN emails e ON e.id = u.email_id WHERE e.gmail_message_id = 'm-garbage' AND NOT u.ok")" = "2" ] && pass "a malformed answer is retried once" || fail "garbage retries"
 
 [ "$(state m-inject)" = "processed" ] && [ -z "$(opp_for m-inject)" ] && pass "instructions inside an email change nothing" || fail "injection: $(state m-inject)"
-curl -s "$FAKE/_control/requests" > /tmp/requests.json
+curl -s --max-time 10 "$FAKE/_control/requests" > /tmp/requests.json
 node -e '
 const reqs = require("/tmp/requests.json");
 const inj = reqs.find((r) => r.user.includes("[case:injection]"));
@@ -152,7 +152,7 @@ ADMIN_ID=33333333-3333-3333-3333-333333333333
 sql "INSERT INTO users (id, email) VALUES ('$ADMIN_ID', 'manager@example.com') ON CONFLICT (email) DO NOTHING" > /dev/null
 ADMIN_ID=$(sql "SELECT id FROM users WHERE email = 'manager@example.com'")
 SESSION="__Host-spotlight_session=$(node scripts/test/make-session.ts "$ADMIN_ID" manager@example.com)"
-page() { curl -s -H "Cookie: $SESSION" "$BASE$1"; }
+page() { curl -s --max-time 30 -H "Cookie: $SESSION" "$BASE$1"; }
 page /opportunities | grep -q "Glow Labs serum reel collaboration" && pass "opportunities page lists the offer" || fail "offer missing from page"
 page /opportunities | grep -q "₹90,000" && pass "the card shows the current fee" || fail "fee missing from card"
 page /opportunities | grep -q "Asks for money before the work" && pass "the card shows scam warnings" || fail "warning missing from card"

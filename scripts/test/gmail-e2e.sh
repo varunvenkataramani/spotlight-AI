@@ -15,7 +15,7 @@ fail() {
   return 0
 }
 sql() { psql "$DATABASE_URL" -tA -c "$1"; }
-tick() { curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick"; }
+tick() { curl -s --max-time 75 -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick"; }
 
 # Make sure no earlier app server still holds the port.
 for _ in $(seq 1 20); do curl -s -o /dev/null "$BASE/login" || break; sleep 1; done

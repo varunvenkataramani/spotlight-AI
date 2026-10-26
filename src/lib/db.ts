@@ -25,6 +25,8 @@ export function getPool(): pg.Pool {
       // Serverless instances are many and short-lived: keep each one's share of connections small.
       max: Number(process.env.DATABASE_POOL_MAX ?? 3),
       idleTimeoutMillis: 10_000,
+      // Fail loudly instead of waiting forever if every connection is busy.
+      connectionTimeoutMillis: 20_000,
       ssl: sslFor(connectionString),
     });
   }
