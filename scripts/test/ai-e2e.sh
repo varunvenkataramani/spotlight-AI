@@ -110,7 +110,7 @@ grep -q "extract:claude-sonnet-5-5" /tmp/req-check.txt && grep -q "triage:claude
 [ "$(sql "SELECT processing_not_before > now() FROM emails WHERE gmail_message_id = 'm-flaky'")" = "t" ] && pass "the retry is scheduled for later" || fail "no retry time"
 
 OLD=$(opp_for m-old)
-[ "$(sql "SELECT priority || '|' || from_historical FROM opportunities WHERE id = '$OLD'")" = "low|t" ] && pass "an old offer whose dates passed is low priority" \
+[ "$(sql "SELECT priority || '|' || from_historical::text FROM opportunities WHERE id = '$OLD'")" = "low|true" ] && pass "an old offer whose dates passed is low priority" \
   || fail "old: $(sql "SELECT priority, from_historical, priority_reasons FROM opportunities WHERE id = '$OLD'")"
 sql "SELECT priority_reasons::text FROM opportunities WHERE id = '$OLD'" | grep -q "already passed" && pass "and says why" || fail "old reason missing"
 
