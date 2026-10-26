@@ -13,17 +13,19 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 - **Gmail** is checked every minute in that same run, through Gmail's change history (no Pub/Sub needed).
 - **Database migrations** run automatically on every production deploy (`vercel-build`).
 
-## What works today (Milestones 1 and 2)
+## What works today (Milestones 1 to 3)
 
 - Google sign-in for exactly two admins (allow-list), with PKCE, signed httpOnly cookies, and a re-check on every request.
 - The complete database schema, with safety rules enforced by Postgres itself: one row per Gmail message, an append-only activity log, drafts that can't be marked sent without a recorded approval, and de-duplicated alerts.
 - Dashboard shell: Overview (live counts from the database), Opportunities, Needs review and Settings (system status and admins). Empty states say what will appear and when.
 - Scheduled background runs every minute; Settings and `/api/health` show if they stop.
 - Connect one Gmail inbox (read-only), with tokens encrypted at rest. New mail is read within about a minute; a first scan reads back a chosen number of days in the background. Failed downloads retry and stay visible. Mail missed during long outages is recovered, revoked access is flagged for reconnecting, and **Disconnect and delete data** revokes access and removes everything stored from that inbox.
-- **Synced mail** page listing what has been read.
+- **Synced mail** page listing what has been read, with what the AI decided about each email.
+- **AI sorting** in the same scheduled run. Claude Haiku triages every email (offer, update, terms, availability, not relevant, newsletter, possible scam, unclear); Claude Sonnet extracts details only from likely offers. Plain code then checks every value against the email's exact words (unmatched values are marked unverified, never trusted silently), reads dates in India time, finds scam signs, scores priority with stated reasons, joins replies to their original offer, logs fee and date changes, and suggests possible duplicates. Unsure emails go to **Needs review**. Email text is passed as fenced data and the model gets no tools, so instructions hidden in an email can't make anything happen.
+- **Opportunities** page with one card per offer: priority and why, pay, next date, deliverables, warnings, unverified details.
 - Automated checks on every push (see `.github/workflows/ci.yml`).
 
-Not built yet: the AI pipeline (3), the full dashboard (4), replies and alerts (5), and the Claude connector (6).
+Not built yet: the full dashboard with detail pages and actions (4), replies and alerts (5), and the Claude connector (6).
 
 ## Project layout
 
@@ -66,6 +68,7 @@ Import the GitHub repository and set the environment variables below (Production
 | `SESSION_SECRET` | Signs session cookies |
 | `TOKEN_ENCRYPTION_KEY` | Encrypts Gmail tokens (used from Milestone 2) |
 | `CRON_SECRET` | Shared secret for the scheduler's calls to `/api/cron/tick` |
+| `ANTHROPIC_API_KEY` | Claude API key for AI sorting (console.anthropic.com); without it, sorting is off |
 
 Each secret is 32 random bytes in base64, a different value for each. Generate one with `npm run gen:secret`, or in any browser console:
 
@@ -100,6 +103,7 @@ npm run test:schema    # database rule checks (fresh migrated database in DATABA
 npm run typecheck
 bash scripts/smoke.sh  # after npm run build: starts the app and probes it end to end
 bash scripts/test/gmail-e2e.sh  # after npm run build: the app against a fake Google, connect to disconnect
+bash scripts/test/ai-e2e.sh     # after npm run build: AI sorting against a fake Claude, 40+ checks
 ```
 
 All of these run on every push in GitHub Actions.

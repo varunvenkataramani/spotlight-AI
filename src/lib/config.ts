@@ -40,6 +40,21 @@ export function readGmailConfig(env: NodeJS.ProcessEnv = process.env): GmailConf
   return { clientId: v.GOOGLE_CLIENT_ID!, clientSecret: v.GOOGLE_CLIENT_SECRET!, tokenKey };
 }
 
+export type AiConfig = { apiKey: string; triageModel: string; extractModel: string };
+
+export const DEFAULT_TRIAGE_MODEL = "claude-haiku-5-5";
+export const DEFAULT_EXTRACT_MODEL = "claude-sonnet-5-5";
+
+/** What AI sorting needs. Without ANTHROPIC_API_KEY, sorting is simply off. */
+export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
+  const v = required(env, ["ANTHROPIC_API_KEY"]);
+  return {
+    apiKey: v.ANTHROPIC_API_KEY!,
+    triageModel: env.ANTHROPIC_TRIAGE_MODEL?.trim() || DEFAULT_TRIAGE_MODEL,
+    extractModel: env.ANTHROPIC_EXTRACT_MODEL?.trim() || DEFAULT_EXTRACT_MODEL,
+  };
+}
+
 export function readDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   return required(env, ["DATABASE_URL"]).DATABASE_URL!;
 }

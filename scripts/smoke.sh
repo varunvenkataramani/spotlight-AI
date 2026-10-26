@@ -24,7 +24,7 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Authorization: Bearer 
 [ "$code" = "401" ] && pass "tick with wrong secret is refused" || fail "tick with wrong secret answered $code"
 
 # 3. With the secret it runs, and health then reports everything up.
-tick=$(curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick")
+tick=$(curl -s --max-time 75 -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick")
 grep -q '"ran":true' <<<"$tick" && pass "tick with secret runs" || fail "tick: $tick"
 health=$(curl -s "$BASE/api/health")
 grep -q '"ok":true' <<<"$health" && pass "health reports database and scheduler up" || fail "health after tick: $health"

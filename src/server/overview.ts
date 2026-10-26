@@ -26,7 +26,8 @@ export async function getOverviewCounts(): Promise<OverviewCounts> {
                          AND next_deadline_at BETWEEN now() AND now() + interval '7 days') AS "dueThisWeek",
       (SELECT count(*) FROM drafts WHERE status IN ('ready','saved_to_gmail'))            AS "draftsToReview",
       count(*) FILTER (WHERE status = 'awaiting_their_response')                          AS "awaitingThem",
-      count(*) FILTER (WHERE priority = 'needs_review' AND status = 'new')                AS "needsReview"
+      count(*) FILTER (WHERE priority = 'needs_review' AND status = 'new')
+        + (SELECT count(*) FROM emails WHERE processing_state = 'needs_review')          AS "needsReview"
     FROM opportunities
     WHERE NOT is_irrelevant AND (snoozed_until IS NULL OR snoozed_until < now())
   `);

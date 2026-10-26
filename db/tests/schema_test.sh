@@ -54,5 +54,12 @@ check "no emails remain after disconnect" "select 1/(1-count(*))::int from email
 check "no queued messages remain after disconnect" "select 1/(1-count(*))::int from gmail_fetch_queue" ok
 check "a new inbox can connect after disconnect" "insert into gmail_accounts(email) values ('client@gmail.com')" ok
 
+# AI sorting (0003)
+NEWACC=$($P -c "select id from gmail_accounts where email='client@gmail.com'")
+check "an opportunity can't be its own duplicate" "insert into opportunities(id,gmail_account_id,title) values ('00000000-0000-0000-0000-0000000000d1','$NEWACC','x'); update opportunities set possible_duplicate_of=id where id='00000000-0000-0000-0000-0000000000d1'" error
+check "AI usage records only known steps" "insert into ai_usage(step,model,ok) values ('summarise','m',true)" error
+check "AI usage can't have negative token counts" "insert into ai_usage(step,model,input_tokens,ok) values ('triage','m',-1,true)" error
+check "AI usage records a valid call" "insert into ai_usage(step,model,input_tokens,output_tokens,ok) values ('triage','claude-haiku-5-5',120,8,true)" ok
+
 echo
 [ "$fails" -eq 0 ] && echo "All schema checks passed." || { echo "$fails schema check(s) failed."; exit 1; }

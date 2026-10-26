@@ -70,7 +70,12 @@ jobs:
         run: bash scripts/smoke.sh
 
       - name: Gmail end to end (fake Google)
+        timeout-minutes: 5
         run: bash scripts/test/gmail-e2e.sh
+
+      - name: AI sorting end to end (fake Claude)
+        timeout-minutes: 6
+        run: bash scripts/test/ai-e2e.sh
 
       - name: Save lockfile
         if: always()
