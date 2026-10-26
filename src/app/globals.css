@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #17152b;
+  --color-ink-soft: #24213d;
+  --color-ink-line: #35314f;
+  --color-paper: #f6f5f9;
+  --color-surface: #ffffff;
+  --color-line: #e4e1ec;
+  --color-muted: #6a6680;
+  --color-gel: #f2b33d;
+  --color-gel-soft: #fdf1d8;
+  --color-alert: #c8364f;
+  --color-ok: #2f8f6b;
+}
+
+@theme inline {
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gel);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The sign-in "stage": one pool of warm light under the wordmark. */
+.stage-light {
+  background:
+    radial-gradient(ellipse 46% 30% at 30% 78%, rgb(242 179 61 / 0.30), transparent 70%),
+    radial-gradient(ellipse 22% 60% at 30% 10%, rgb(242 179 61 / 0.10), transparent 75%),
+    var(--color-ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .stage-light {
+    animation: lights-up 1.4s ease-out both;
+  }
+  @keyframes lights-up {
+    from { background-color: #0d0c1a; filter: brightness(0.55); }
+    to { filter: brightness(1); }
+  }
+}

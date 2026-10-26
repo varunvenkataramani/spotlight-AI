@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: spotlight
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/spotlight
+      APP_URL: http://localhost:3000
+      ADMIN_EMAILS: manager@example.com,actress@example.com
+      GOOGLE_CLIENT_ID: ci-client.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: ci-secret
+      SESSION_SECRET: ci-session-secret-that-is-at-least-32-chars
+      TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Apply migrations
+        run: npm run migrate
+
+      - name: Migrations are idempotent
+        run: npm run migrate | grep -q "Database is up to date."
+
+      - name: Schema safety checks (fresh database)
+        run: |
+          psql "$DATABASE_URL" -c "CREATE DATABASE schema_check"
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/schema_check npm run migrate
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/schema_check npm run test:schema
+
+      - name: Build
+        run: npm run build
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Smoke test (web app + worker)
+        run: bash scripts/smoke.sh
+
+      - name: Save lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+          if-no-files-found: ignore

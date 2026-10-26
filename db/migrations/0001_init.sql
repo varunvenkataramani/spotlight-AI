@@ -331,12 +331,14 @@ CREATE TABLE drafts (
   error           text,
   created_by      uuid REFERENCES users(id) ON DELETE SET NULL,
   approved_by     uuid REFERENCES users(id) ON DELETE SET NULL,
+  -- Snapshot of who approved, kept even if that admin account is later removed.
+  approved_by_email text,
   approved_at     timestamptz,
   sent_at         timestamptz,
   gmail_sent_message_id text,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  CHECK (status <> 'sent' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL AND sent_at IS NOT NULL))
+  CHECK (status <> 'sent' OR (approved_by_email IS NOT NULL AND approved_at IS NOT NULL AND sent_at IS NOT NULL))
 );
 CREATE INDEX drafts_opp_idx ON drafts (opportunity_id);
 CREATE TRIGGER drafts_updated_at BEFORE UPDATE ON drafts
