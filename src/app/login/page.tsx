@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { ConfigError } from "@/lib/config.ts";
 import { getCurrentAdmin } from "@/server/session.ts";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -12,7 +13,7 @@ const MESSAGES: Record<string, string> = {
   email_not_verified: "Google hasn't verified the email on that account yet. Verify it with Google, then try again.",
   token_exchange_failed: "Google didn't complete the sign-in. Try again; if it repeats, check the OAuth client settings.",
   invalid_id_token: "Google's response couldn't be verified. Try again; if it repeats, check GOOGLE_CLIENT_ID.",
-  config: "Sign-in isn't set up yet: some environment variables are missing. See the README setup steps.",
+  config: "Sign-in isn't set up yet: some settings are missing. Add them in Vercel under Environment Variables, then redeploy.",
   unknown: "Sign-in failed for an unexpected reason. Try again in a minute.",
 };
 
@@ -23,14 +24,19 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   let alreadySignedIn = false;
+  let configProblem: string | null = null;
   try {
     alreadySignedIn = (await getCurrentAdmin()) !== null;
-  } catch {
-    // Missing configuration is reported through the error message below.
+  } catch (e) {
+    if (e instanceof ConfigError) configProblem = e.message;
   }
   if (alreadySignedIn) redirect("/");
 
-  const error = params.error ? (MESSAGES[params.error] ?? MESSAGES.unknown) : null;
+  const error = configProblem
+    ? `Sign-in isn't set up yet. ${configProblem}`
+    : params.error
+      ? (MESSAGES[params.error] ?? MESSAGES.unknown)
+      : null;
 
   return (
     <main className="stage-light flex min-h-dvh items-end text-paper sm:items-center">

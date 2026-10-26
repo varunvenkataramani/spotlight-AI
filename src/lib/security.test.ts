@@ -6,6 +6,7 @@ import { createSignedValue, readSignedValue } from "./signed-value.ts";
 import { isAllowedAdmin, parseAllowlist } from "./allowlist.ts";
 import { isAuthorizedBearer } from "./bearer.ts";
 import { describeDatabaseUrl } from "./database-url.ts";
+import { ConfigError, readWebConfig } from "./config.ts";
 import {
   buildSignInUrl,
   codeChallengeFor,
@@ -104,6 +105,33 @@ test("allow-list ignores case, spaces and junk entries", () => {
   assert.ok(!isAllowedAdmin("stranger@example.com", list));
   assert.ok(!isAllowedAdmin(undefined, list));
   assert.ok(!isAllowedAdmin("anyone@x.com", parseAllowlist(undefined)));
+});
+
+// --- Configuration -------------------------------------------------------------
+
+test("missing settings are named, never their values", () => {
+  assert.throws(
+    () => readWebConfig({ DATABASE_URL: "postgresql://x", SESSION_SECRET: "s".repeat(40) } as NodeJS.ProcessEnv),
+    (e: unknown) =>
+      e instanceof ConfigError &&
+      /APP_URL, ADMIN_EMAILS, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET/.test(e.message) &&
+      !e.message.includes("postgresql://x"),
+  );
+});
+
+test("bad settings give a clear configuration error", () => {
+  const base = {
+    APP_URL: "https://app.example",
+    DATABASE_URL: "postgresql://x",
+    ADMIN_EMAILS: "a@x.com",
+    GOOGLE_CLIENT_ID: "id",
+    GOOGLE_CLIENT_SECRET: "secret",
+    SESSION_SECRET: "s".repeat(40),
+  };
+  assert.equal(readWebConfig({ ...base, APP_URL: "https://app.example/" } as NodeJS.ProcessEnv).appUrl, "https://app.example");
+  for (const override of [{ SESSION_SECRET: "short" }, { APP_URL: "app.example" }, { ADMIN_EMAILS: "nobody" }]) {
+    assert.throws(() => readWebConfig({ ...base, ...override } as NodeJS.ProcessEnv), ConfigError, JSON.stringify(override));
+  }
 });
 
 // --- Database address diagnostics ---------------------------------------------

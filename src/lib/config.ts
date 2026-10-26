@@ -18,7 +18,9 @@ export class ConfigError extends Error {}
 function required(env: NodeJS.ProcessEnv, names: string[]): Record<string, string> {
   const missing = names.filter((n) => !env[n]?.trim());
   if (missing.length > 0) {
-    throw new ConfigError(`Missing environment variables: ${missing.join(", ")}. See .env.example.`);
+    throw new ConfigError(
+      `Missing settings: ${missing.join(", ")}. Add them in Vercel under Environment Variables (Production), then redeploy.`,
+    );
   }
   return Object.fromEntries(names.map((n) => [n, env[n]!.trim()]));
 }
@@ -38,13 +40,22 @@ export function readWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
   ]);
   const admins = parseAllowlist(v.ADMIN_EMAILS);
   if (admins.size === 0) throw new ConfigError("ADMIN_EMAILS has no valid email addresses.");
+  if (!/^https?:\/\/[^/\s]+/.test(v.APP_URL!)) {
+    throw new ConfigError("APP_URL must start with https:// followed by the site's address.");
+  }
+  let sessionSecret: string;
+  try {
+    sessionSecret = assertSecret(v.SESSION_SECRET);
+  } catch {
+    throw new ConfigError("SESSION_SECRET is too short. Use a generated secret of at least 32 characters.");
+  }
   return {
     appUrl: v.APP_URL!.replace(/\/+$/, ""),
     databaseUrl: v.DATABASE_URL!,
     admins,
     googleClientId: v.GOOGLE_CLIENT_ID!,
     googleClientSecret: v.GOOGLE_CLIENT_SECRET!,
-    sessionSecret: assertSecret(v.SESSION_SECRET),
+    sessionSecret,
     isProduction: env.NODE_ENV === "production",
   };
 }

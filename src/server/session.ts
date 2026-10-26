@@ -2,7 +2,7 @@
 // so removing someone from the allow-list locks them out immediately.
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { readWebConfig } from "@/lib/config.ts";
+import { ConfigError, readWebConfig } from "@/lib/config.ts";
 import { isAllowedAdmin } from "@/lib/allowlist.ts";
 import { createSignedValue, readSignedValue } from "@/lib/signed-value.ts";
 
@@ -42,7 +42,14 @@ export async function getCurrentAdmin(): Promise<AdminSession | null> {
 
 /** Use at the top of every protected page, layout and route handler. */
 export async function requireAdmin(): Promise<AdminSession> {
-  const session = await getCurrentAdmin();
+  let session: AdminSession | null;
+  try {
+    session = await getCurrentAdmin();
+  } catch (error) {
+    // Missing settings: send the admin to a page that says which ones, not a blank server error.
+    if (error instanceof ConfigError) redirect("/login?error=config");
+    throw error;
+  }
   if (!session) redirect("/login");
   return session;
 }
