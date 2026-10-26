@@ -69,6 +69,8 @@ export async function deleteInboxAndData(target: DisconnectTarget, adminUserId: 
   const counted = await query<{ n: string }>(`SELECT count(*) AS n FROM emails WHERE gmail_account_id = $1`, [target.id]);
   const deletedEmails = Number(counted[0]?.n ?? 0);
   await query(`DELETE FROM gmail_accounts WHERE id = $1`, [target.id]);
+  // Alerts about that inbox go too (offer alerts already went with their offers).
+  await query(`DELETE FROM notifications WHERE event_key LIKE $1`, [`gmail_reconnect:${target.id}:%`]);
   await query(`INSERT INTO activities (actor_type, actor_user_id, kind, detail) VALUES ('user', $1, 'gmail_disconnected', $2)`, [
     adminUserId,
     JSON.stringify({ email: target.email, deletedEmails }),

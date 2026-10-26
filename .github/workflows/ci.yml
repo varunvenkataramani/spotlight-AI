@@ -81,6 +81,10 @@ jobs:
         timeout-minutes: 6
         run: bash scripts/test/dashboard-e2e.sh
 
+      - name: Alerts end to end (fake Telegram and phones)
+        timeout-minutes: 6
+        run: bash scripts/test/alerts-e2e.sh
+
       - name: Through a transaction pooler (like Supabase's)
         timeout-minutes: 5
         run: |

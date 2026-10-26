@@ -190,6 +190,25 @@ function describe(item: TimelineItem): React.ReactNode {
       return `${who} kept it separate from a similar offer`;
     case "possible_duplicate":
       return "Looks similar to another offer from the same sender";
+    case "flagged_for_her":
+      return d.note ? `${who} sent it to her: “${str(d.note)}”` : `${who} sent it to her for an answer`;
+    case "flag_withdrawn":
+      return `${who} withdrew the question to her`;
+    case "her_answer": {
+      const label = { interested: "Interested", pass: "Pass", questions: "Has questions" }[str(d.answer)] ?? str(d.answer);
+      const via = d.via === "telegram" ? " (in Telegram)" : "";
+      return (
+        <>
+          <span className="font-medium">{who}</span> answered: {label}
+          {via}
+          {d.note ? <span className="block whitespace-pre-wrap">“{str(d.note)}”</span> : null}
+        </>
+      );
+    }
+    case "reminder_set":
+      return `${who} set a reminder for ${typeof d.at === "string" ? WHEN.format(new Date(d.at)) : "later"}${d.forBoth ? " for both" : ""}${d.note ? `: ${str(d.note)}` : ""}`;
+    case "reminder_cancelled":
+      return `${who} cancelled a reminder`;
     case "linked_by_sender":
       return "An email was linked because it's from the same sender. Check it belongs here.";
     default:

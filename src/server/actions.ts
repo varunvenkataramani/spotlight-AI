@@ -11,6 +11,7 @@ import {
   parseDayIST,
   parseLines,
   parseNote,
+  parseReminderTime,
   parseStatus,
   STATUS_LABEL,
 } from "@/lib/edits.ts";
@@ -385,6 +386,125 @@ export async function reviewEmail(
     return { message: "Card created. Fill in the pay and dates so it's scored properly.", opportunityId: oppId };
   });
 }
+
+// --- Flag for her, her answer, reminders -----------------------------------------------------------------
+
+const ANSWERS = ["interested", "pass", "questions"] as const;
+type Answer = (typeof ANSWERS)[number];
+const ANSWER_DONE: Record<Answer, string> = {
+  interested: "Saved: she's interested. Her team has been told.",
+  pass: "Saved: she'll pass. Her team has been told.",
+  questions: "Saved: she has questions. Her team has been told.",
+};
+
+/** Which admin is the actress, if someone has chosen in Settings. */
+export async function talentEmail(c: Pick<pg.PoolClient, "query">): Promise<string | null> {
+  const r = await c.query<{ value: unknown }>(`SELECT value FROM preferences WHERE key = 'talent_email'`);
+  const v = r.rows[0]?.value;
+  return typeof v === "string" ? v : null;
+}
+
+/** Puts the offer to her: she gets it in Telegram, on her phone and in Spotlight, with answer buttons. */
+export async function flagForHer(admin: AdminSession, id: string, rawNote: unknown): Promise<string> {
+  const note = cleanText(rawNote, 300);
+  return tx(async (c) => {
+    const o = await lock(c, id);
+    if (o.is_irrelevant) throw new EditError("This card is marked not relevant. Put it back first.");
+    const talent = await talentEmail(c);
+    if (!talent) throw new EditError("Choose who the actress is in Settings first.");
+    await c.query(
+      `UPDATE opportunities SET flagged_for_talent_at = now(), flagged_by = $2, talent_response = NULL, talent_response_note = NULL,
+              talent_responded_at = NULL, is_read = true
+       WHERE id = $1`,
+      [id, admin.userId],
+    );
+    await log(c, id, admin, "flagged_for_her", note ? { note } : {});
+    await rescoreOpportunity(c, id);
+    const signedIn = (await c.query(`SELECT 1 FROM users WHERE email = $1`, [talent])).rowCount;
+    return signedIn
+      ? "Sent to her. Her answer will show here and reach you as an alert."
+      : "Flagged. She'll see it once she signs in to Spotlight; connect her Telegram in Settings so it reaches her phone.";
+  });
+}
+
+export async function withdrawFlag(admin: AdminSession, id: string): Promise<string> {
+  return tx(async (c) => {
+    const o = await lock(c, id);
+    if (!o.flagged_for_talent_at) return "It wasn't flagged for her.";
+    await c.query(
+      `UPDATE opportunities SET flagged_for_talent_at = NULL, flagged_by = NULL, talent_response = NULL, talent_response_note = NULL, talent_responded_at = NULL
+       WHERE id = $1`,
+      [id],
+    );
+    await log(c, id, admin, "flag_withdrawn", {});
+    await rescoreOpportunity(c, id);
+    return "No longer waiting for her answer.";
+  });
+}
+
+/**
+ * Her answer, from Spotlight or a Telegram button. "Interested" moves a fresh card to Interested;
+ * nothing is ever accepted or declined for her.
+ */
+export async function answerForHer(
+  actor: AdminSession,
+  id: string,
+  rawAnswer: unknown,
+  rawNote: unknown,
+  via: "spotlight" | "telegram",
+): Promise<string> {
+  const answer = ANSWERS.find((a) => a === rawAnswer);
+  if (!answer) throw new EditError("Choose Interested, Pass or Questions.");
+  const note = rawNote === null || rawNote === undefined || rawNote === "" ? null : parseNote(rawNote).slice(0, 1000);
+  return tx(async (c) => {
+    const o = await lock(c, id);
+    if (!o.flagged_for_talent_at) throw new EditError("This offer isn't waiting for her answer.");
+    await c.query(
+      `UPDATE opportunities SET talent_response = $2, talent_response_note = $3, talent_responded_at = now() WHERE id = $1`,
+      [id, answer, note],
+    );
+    await log(c, id, actor, "her_answer", { answer, ...(note ? { note } : {}), via });
+    if (answer === "interested" && (o.status === "new" || o.status === "reviewed")) {
+      await c.query(`UPDATE opportunities SET status = 'interested' WHERE id = $1`, [id]);
+      await log(c, id, actor, "status_changed", { from: o.status, to: "interested", because: "She said she's interested" });
+    }
+    await rescoreOpportunity(c, id);
+    return ANSWER_DONE[answer];
+  });
+}
+
+export async function addReminder(admin: AdminSession, id: string, form: FormData): Promise<string> {
+  const at = parseReminderTime(form.get("day"), form.get("time"));
+  const note = cleanText(form.get("note"), 120);
+  const forBoth = form.get("who") === "both";
+  return tx(async (c) => {
+    await lock(c, id);
+    const open = await c.query(`SELECT 1 FROM reminders WHERE opportunity_id = $1 AND status = 'pending'`, [id]);
+    if ((open.rowCount ?? 0) >= 10) throw new EditError("This card already has 10 reminders waiting.");
+    await c.query(
+      `INSERT INTO reminders (opportunity_id, kind, due_at, dedupe_key, created_by, for_user, note)
+       VALUES ($1, 'custom', $2, 'custom:' || gen_random_uuid(), $3, $4, $5)`,
+      [id, at, admin.userId, forBoth ? null : admin.userId, note],
+    );
+    await log(c, id, admin, "reminder_set", { at: at.toISOString(), forBoth, ...(note ? { note } : {}) });
+    await rescoreOpportunity(c, id);
+    return `Reminder set for ${REMINDER_TIME.format(at)}${forBoth ? " for both of you" : ""}.`;
+  });
+}
+
+export async function cancelReminder(admin: AdminSession, id: string, reminderId: unknown): Promise<string> {
+  if (typeof reminderId !== "string" || !/^[0-9a-f-]{36}$/i.test(reminderId)) throw new EditError("That reminder no longer exists.");
+  return tx(async (c) => {
+    await lock(c, id);
+    const r = await c.query(`UPDATE reminders SET status = 'cancelled' WHERE id = $1 AND opportunity_id = $2 AND status = 'pending'`, [reminderId, id]);
+    if (!r.rowCount) throw new EditError("That reminder already went off or was cancelled.");
+    await log(c, id, admin, "reminder_cancelled", {});
+    await rescoreOpportunity(c, id);
+    return "Reminder cancelled.";
+  });
+}
+
+const REMINDER_TIME = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 export async function markOpened(id: string): Promise<void> {
   await getPool().query(`UPDATE opportunities SET is_read = true WHERE id = $1 AND NOT is_read`, [id]);

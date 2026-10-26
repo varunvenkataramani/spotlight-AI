@@ -44,3 +44,29 @@ export async function getOverviewCounts(): Promise<OverviewCounts> {
     needsReview: n(r?.needsReview),
   };
 }
+
+export type FlaggedItem = {
+  id: string;
+  title: string;
+  organization: string | null;
+  flagged_for_talent_at: Date;
+  talent_response: "interested" | "pass" | "questions" | null;
+  talent_response_note: string | null;
+  talent_responded_at: Date | null;
+};
+
+/** Offers put to her in the last two weeks: unanswered first, then her latest answers. */
+export async function listFlagged(): Promise<{ items: FlaggedItem[]; talentEmail: string | null }> {
+  const [items, talent] = await Promise.all([
+    query<FlaggedItem>(
+      `SELECT id, title, organization, flagged_for_talent_at, talent_response, talent_response_note, talent_responded_at
+       FROM opportunities
+       WHERE flagged_for_talent_at > now() - interval '14 days' AND NOT is_irrelevant
+         AND status NOT IN ('declined', 'completed', 'expired', 'archived')
+       ORDER BY (talent_response IS NULL) DESC, COALESCE(talent_responded_at, flagged_for_talent_at) DESC
+       LIMIT 6`,
+    ),
+    query<{ value: unknown }>(`SELECT value FROM preferences WHERE key = 'talent_email'`),
+  ]);
+  return { items, talentEmail: typeof talent[0]?.value === "string" ? (talent[0].value as string) : null };
+}

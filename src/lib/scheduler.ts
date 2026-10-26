@@ -1,20 +1,23 @@
 // Scheduled background work. Supabase's scheduler (pg_cron) calls /api/cron/tick every
 // minute, and that route calls runTick(). Framework-free so it can also be run from a script.
 //
-// Each run: Gmail sync (Milestone 2), then AI sorting (Milestone 3). Milestone 5 adds alerts and reminders.
-import { ConfigError, readAiConfig, readGmailConfig } from "./config.ts";
+// Each run: Gmail sync, then AI sorting, then alerts and reminders (Telegram, phones, in-app).
+import { ConfigError, readAiConfig, readAlertConfig, readGmailConfig } from "./config.ts";
 import { getPool, query } from "./db.ts";
 import { anthropicBaseUrl } from "./ai/anthropic.ts";
 import { processPendingEmails, type AiReport } from "./ai/process.ts";
+import { runAlerts, type AlertReport } from "./alerts/engine.ts";
 import { googleEndpoints } from "./gmail/google.ts";
 import { syncAllInboxes } from "./gmail/sync.ts";
 
 const TICK_LOCK_ID = 727_002; // unique to the scheduler; migrations use 727_001
 export const SCHEDULER_ID = "scheduler";
 /** Gmail sync stops starting new work after this long, leaving the rest of the run for AI sorting. */
-export const GMAIL_BUDGET_MS = 22_000;
-/** Stop starting new work after this long, well inside the 60-second function limit. */
-export const TICK_BUDGET_MS = 45_000;
+export const GMAIL_BUDGET_MS = 20_000;
+/** AI sorting stops starting new emails after this long, leaving time for alerts. */
+export const TICK_BUDGET_MS = 40_000;
+/** Alerts stop sending after this long, well inside the 60-second function limit. */
+export const ALERT_BUDGET_MS = 50_000;
 
 export type AiStatus = { state: "ok" | "off" | "account_problem" | "failed"; message: string | null; at: string };
 
@@ -24,6 +27,7 @@ export type TickResult = {
   tasks: Record<string, "ok" | "skipped" | "failed">;
   gmail?: { inboxes: number; queuedNew: number; queuedScan: number; fetched: number; failed: number; reconnectNeeded: number };
   ai?: AiReport;
+  alerts?: AlertReport;
   durationMs: number;
 };
 
@@ -91,6 +95,15 @@ export async function runTick(): Promise<TickResult> {
       SCHEDULER_ID,
       JSON.stringify(ai),
     ]);
+
+    // 3. Alerts and reminders: worked out after sorting, so a new offer is announced in the same run.
+    try {
+      result.alerts = await runAlerts(readAlertConfig(), started + ALERT_BUDGET_MS);
+      result.tasks.alerts = "ok";
+    } catch (error) {
+      result.tasks.alerts = error instanceof ConfigError ? "skipped" : "failed";
+      if (!(error instanceof ConfigError)) console.error("Alerts failed:", error instanceof Error ? error.message : "unknown error");
+    }
 
     result.durationMs = Date.now() - started;
     return result;

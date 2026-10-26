@@ -68,5 +68,25 @@ check "deleting an inbox deletes its corrections too" "delete from gmail_account
 check "no correction is left behind" "select 1/(1-count(*))::int from corrections" ok
 check "opportunities start not review-cleared" "insert into opportunities(gmail_account_id,title) values ('$NEWACC','y'); select 1/(count(*) filter (where not review_cleared))::int from opportunities" ok
 
+# Alerts (0005)
+U2=00000000-0000-0000-0000-000000000002
+U3=00000000-0000-0000-0000-000000000003
+$P -c "insert into users(id,email) values ('$U2','m@x.com'),('$U3','s@x.com')" > /dev/null
+check "alert choices only take known values" "update users set alert_types = '{\"new_offers\": \"loud\"}' where id='$U2'" error
+check "alert choices accept 'all'" "update users set alert_types = alert_types || '{\"new_offers\": \"all\"}' where id='$U2'" ok
+check "a Telegram chat belongs to one admin" "update users set telegram_chat_id='555' where id='$U2'; update users set telegram_chat_id='555' where id='$U3'" error
+check "a link code must expire" "update users set telegram_link_hash='abc', telegram_link_expires_at=null where id='$U3'" error
+check "notification retries are bounded" "insert into notifications(user_id,event_key,channel,title,attempts) values ('$U2','r:1','telegram','x',11)" error
+check "a sent notification records when" "insert into notifications(user_id,event_key,channel,title,status) values ('$U2','r:2','telegram','x','sent')" error
+check "a pending Telegram notification with buttons is accepted" "insert into notifications(user_id,event_key,channel,kind,title,actions) values ('$U2','flag:1','telegram','flag','x','[{\"label\":\"Pass\",\"data\":\"a:1:p\"}]')" ok
+check "her answer needs the offer to have been put to her" "insert into opportunities(gmail_account_id,title,talent_response,talent_responded_at) values ('$NEWACC','z','pass',now())" error
+check "her answer on a flagged offer is accepted" "insert into opportunities(id,gmail_account_id,title,flagged_for_talent_at,talent_response,talent_responded_at) values ('00000000-0000-0000-0000-0000000000f1','$NEWACC','z',now(),'pass',now())" ok
+check "a reminder someone set records who" "insert into reminders(opportunity_id,kind,due_at,dedupe_key) values ('00000000-0000-0000-0000-0000000000f1','custom',now(),'custom:a')" error
+check "reminder notes stay short" "insert into reminders(opportunity_id,kind,due_at,dedupe_key,created_by,note) values ('00000000-0000-0000-0000-0000000000f1','custom',now(),'custom:b','$U2',repeat('x',301))" error
+check "a reminder for one admin is accepted" "insert into reminders(opportunity_id,kind,due_at,dedupe_key,created_by,for_user,note) values ('00000000-0000-0000-0000-0000000000f1','custom',now(),'custom:c','$U2','$U2','Call Priya')" ok
+check "removing an admin removes their reminders" "delete from users where id='$U2'; select 1/(1-count(*))::int from reminders" ok
+check "a Telegram update is handled once" "insert into telegram_updates(update_id) values (77),(77)" error
+check "the actress choice starts empty" "select 1/(count(*))::int from preferences where key='talent_email' and value='null'::jsonb" ok
+
 echo
 [ "$fails" -eq 0 ] && echo "All schema checks passed." || { echo "$fails schema check(s) failed."; exit 1; }

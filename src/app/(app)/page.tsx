@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Flash } from "@/components/detail";
 import { ErrorPanel, PageHeader, StatusDot, formatIST } from "@/components/ui";
 import { getInboxStatus, type InboxStatus } from "@/server/gmail.ts";
-import { getOverviewCounts, type OverviewCounts } from "@/server/overview.ts";
+import { getOverviewCounts, listFlagged, type FlaggedItem, type OverviewCounts } from "@/server/overview.ts";
+import { requireAdmin } from "@/server/session.ts";
 import { listOpportunities, listRecentChanges, type OpportunityCard, type RecentChange } from "@/server/opportunities.ts";
 import { formatDay, payText, relativeDay } from "@/lib/format.ts";
 
@@ -10,17 +12,21 @@ export const metadata: Metadata = { title: "Overview" };
 
 const TODAY = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long" });
 
-export default async function OverviewPage() {
+export default async function OverviewPage({ searchParams }: { searchParams: Promise<{ done?: string; error?: string }> }) {
+  const { done, error: actionError } = await searchParams;
+  const me = await requireAdmin();
   let counts: OverviewCounts;
   let inbox: InboxStatus | null;
   let now: OpportunityCard[];
   let changes: RecentChange[];
+  let flagged: { items: FlaggedItem[]; talentEmail: string | null };
   try {
-    [counts, inbox, now, changes] = await Promise.all([
+    [counts, inbox, now, changes, flagged] = await Promise.all([
       getOverviewCounts(),
       getInboxStatus(),
       listOpportunities({ attention: true, limit: 6 }),
       listRecentChanges(6),
+      listFlagged(),
     ]);
   } catch (error) {
     const reason = error instanceof Error ? error.message.slice(0, 300) : "unknown error";
@@ -58,9 +64,15 @@ export default async function OverviewPage() {
     { label: "Waiting on them", value: counts.awaitingThem },
   ];
 
+  const isHer = flagged.talentEmail === me.email;
+  const waitingForHer = flagged.items.filter((f) => !f.talent_response);
+
   return (
     <>
-      <PageHeader title={TODAY.format(new Date())} lead={lead} />
+      <PageHeader title={TODAY.format(new Date())} lead={isHer && waitingForHer.length > 0 ? `${waitingForHer.length} ${waitingForHer.length === 1 ? "offer is" : "offers are"} waiting for your answer.` : lead} />
+      <Flash done={done} error={actionError} />
+
+      {flagged.items.length > 0 && <HerCalls items={flagged.items} isHer={isHer} />}
 
       <section aria-label="Counts" className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
         {figures.map((f) => (
@@ -173,6 +185,45 @@ export default async function OverviewPage() {
         </div>
       </section>
     </>
+  );
+}
+
+const ANSWER = { interested: "Interested", pass: "Pass", questions: "Has questions" } as const;
+
+/** For her: offers waiting for her answer, with the buttons right here. For the team: what she said. */
+function HerCalls({ items, isHer }: { items: FlaggedItem[]; isHer: boolean }) {
+  return (
+    <section className="mb-10 rounded-2xl border border-gel/60 bg-gel-soft/40 p-5">
+      <h2 className="font-display text-xl font-semibold">{isHer ? "Your call" : "Her call"}</h2>
+      <ul className="mt-3 divide-y divide-line">
+        {items.map((f) => (
+          <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <span className="min-w-0">
+              <Link href={`/opportunities/${f.id}`} className="font-medium underline-offset-4 hover:underline">
+                {f.title}
+              </Link>
+              <span className="block text-sm text-muted">
+                {[f.organization, f.talent_response ? `${isHer ? "You said" : "She said"}: ${ANSWER[f.talent_response]}` : isHer ? "Waiting for your answer" : "Waiting for her answer"]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+              {f.talent_response_note && <span className="block break-words text-sm">“{f.talent_response_note}”</span>}
+            </span>
+            {isHer && !f.talent_response && (
+              <form method="post" action={`/api/opportunities/${f.id}`} className="flex flex-wrap gap-2">
+                <input type="hidden" name="action" value="answer" />
+                <input type="hidden" name="back" value="/" />
+                <button name="answer" value="interested" className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper hover:bg-ink-soft">Interested</button>
+                <button name="answer" value="pass" className="rounded-full border border-line bg-surface px-4 py-2 text-sm font-medium hover:border-ink/30">Pass</button>
+                <Link href={`/opportunities/${f.id}#h-her`} className="rounded-full border border-line bg-surface px-4 py-2 text-sm font-medium hover:border-ink/30">
+                  Questions
+                </Link>
+              </form>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

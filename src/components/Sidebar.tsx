@@ -7,11 +7,12 @@ const NAV = [
   { href: "/", label: "Overview" },
   { href: "/opportunities", label: "Opportunities" },
   { href: "/review", label: "Needs review" },
+  { href: "/alerts", label: "Alerts" },
   { href: "/mail", label: "Synced mail" },
   { href: "/settings", label: "Settings" },
 ] as const;
 
-export function Sidebar({ email, name }: { email: string; name: string | null }) {
+export function Sidebar({ email, name, unreadAlerts }: { email: string; name: string | null; unreadAlerts: number }) {
   const pathname = usePathname();
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
@@ -41,6 +42,12 @@ export function Sidebar({ email, name }: { email: string; name: string | null })
                     className={`h-1.5 w-1.5 rounded-full ${active ? "bg-gel" : "bg-transparent"}`}
                   />
                   {item.label}
+                  {item.href === "/alerts" && unreadAlerts > 0 && !active && (
+                    <span className="ml-auto rounded-full bg-gel px-2 py-0.5 text-xs font-semibold tabular-nums text-ink">
+                      {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                      <span className="sr-only"> unread</span>
+                    </span>
+                  )}
                 </Link>
               </li>
             );
