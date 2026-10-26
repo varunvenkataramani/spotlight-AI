@@ -53,7 +53,7 @@ Not built yet: replies, alerts and reminders (5), replies and alerts (5), and th
 
 ### 2. Database (Supabase)
 
-Create a Supabase project. Under **Connect > Direct > Session pooler**, copy the connection string (port **5432**) into `DATABASE_URL`. Optionally put the database's SSL certificate (Project settings > Database) in `DATABASE_CA_CERT` so the server certificate is fully verified.
+Create a Supabase project. Under **Connect > Direct > Transaction pooler**, copy the connection string (port **6543**) into `DATABASE_URL`. Use the transaction pooler, not the session pooler: Vercel runs many short-lived copies of the app, and the session pooler's limit of 15 held connections runs out (error `EMAXCONNSESSION`). Optionally put the database's SSL certificate (Project settings > Database) in `DATABASE_CA_CERT` so the server certificate is fully verified.
 
 Don't create tables yourself: the first production deploy applies `db/migrations` automatically.
 
@@ -64,7 +64,7 @@ Import the GitHub repository and set the environment variables below (Production
 | Variable | Purpose |
 | --- | --- |
 | `APP_URL` | Public address, e.g. `https://spotlight-xyz.vercel.app` (no trailing slash) |
-| `DATABASE_URL` | Supabase session-pooler connection string |
+| `DATABASE_URL` | Supabase transaction-pooler connection string (port 6543) |
 | `DATABASE_CA_CERT` | Optional: CA certificate for full TLS verification |
 | `ADMIN_EMAILS` | The two admin Google accounts, comma-separated |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | OAuth client from step 1.4 |

@@ -81,6 +81,12 @@ jobs:
         timeout-minutes: 6
         run: bash scripts/test/dashboard-e2e.sh
 
+      - name: Through a transaction pooler (like Supabase's)
+        timeout-minutes: 5
+        run: |
+          sudo apt-get install -y -qq pgbouncer > /dev/null
+          bash scripts/test/pooler-check.sh
+
       - name: Save lockfile
         if: always()
         uses: actions/upload-artifact@v4

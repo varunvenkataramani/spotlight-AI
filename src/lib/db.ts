@@ -22,11 +22,12 @@ export function getPool(): pg.Pool {
     const connectionString = readDatabaseUrl();
     globalRef.__spotlightPool = new pg.Pool({
       connectionString,
-      // Serverless instances are many and short-lived: keep each one's share of connections small.
+      // Serverless copies are many and short-lived: each keeps only a few connections, and lets them
+      // go quickly. Use Supabase's transaction pooler (port 6543) so connections are shared, not held.
       max: Number(process.env.DATABASE_POOL_MAX ?? 3),
-      idleTimeoutMillis: 10_000,
+      idleTimeoutMillis: 5_000,
       // Fail loudly instead of waiting forever if every connection is busy.
-      connectionTimeoutMillis: 20_000,
+      connectionTimeoutMillis: 15_000,
       ssl: sslFor(connectionString),
     });
   }

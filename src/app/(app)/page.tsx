@@ -22,13 +22,21 @@ export default async function OverviewPage() {
       listOpportunities({ attention: true, limit: 6 }),
       listRecentChanges(6),
     ]);
-  } catch {
+  } catch (error) {
+    const reason = error instanceof Error ? error.message.slice(0, 300) : "unknown error";
+    const busy = /EMAXCONN|max clients|too many clients|timeout exceeded when trying to connect/i.test(reason);
+    console.error("Overview failed:", reason);
     return (
       <>
         <PageHeader title="Overview" />
-        <ErrorPanel title="The database can't be reached">
-          Spotlight couldn't load your opportunities. Check that DATABASE_URL is set and the migrations have run (npm run
-          migrate), then reload this page. The status of each part is on the <Link className="underline" href="/settings">Settings</Link> page.
+        <ErrorPanel title={busy ? "The database is too busy right now" : "The database couldn't load your opportunities"}>
+          {busy
+            ? "Every database connection is in use. This usually clears within a minute: reload the page. If it keeps happening, check that DATABASE_URL uses Supabase's transaction pooler (port 6543)."
+            : "Reload the page in a minute. If it keeps happening, the details below and the Settings page show what's wrong."}
+          <span className="mt-2 block text-xs text-muted">Database said: {reason}</span>
+          <Link className="mt-2 inline-block underline" href="/settings">
+            Open Settings
+          </Link>
         </ErrorPanel>
       </>
     );
