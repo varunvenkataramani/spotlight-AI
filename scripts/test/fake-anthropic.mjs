@@ -124,6 +124,17 @@ function answer(kase, step, received) {
           });
     case "orphan":
       return t ? triage("opportunity_update", 0.9) : extraction({ title: "Update about something" });
+    case "manual":
+      // Unsure at first; once her team says it's an offer, extraction gives a proper card.
+      return t
+        ? triage("unclear", 0.5)
+        : extraction({
+            title: "Wedding appearance in Jaipur",
+            category: "events_appearances",
+            organization: qv("Rao Weddings", "Rao Weddings"),
+            location: qv("Jaipur", "a wedding in Jaipur"),
+            compensation: { type: "paid", status: "confirmed", amount_min: 200000, amount_max: 200000, currency: "INR", text: "₹2,00,000", quote: "₹2,00,000" },
+          });
     case "auth":
       return { status: 401 };
     default:

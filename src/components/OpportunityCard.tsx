@@ -1,4 +1,5 @@
-import { formatMoney } from "@/lib/ai/priority.ts";
+import Link from "next/link";
+import { payText } from "@/lib/format.ts";
 import type { OpportunityCard as Card } from "@/server/opportunities.ts";
 
 const PRIORITY: Record<Card["priority"], { label: string; className: string }> = {
@@ -24,19 +25,6 @@ const FIELD_NAMES: Record<string, string> = {
 };
 
 const DAY = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
-
-function payText(o: Card): string {
-  const min = o.amount_min === null ? null : Number(o.amount_min);
-  const max = o.amount_max === null ? null : Number(o.amount_max);
-  if (min !== null) {
-    const amount = max !== null && max !== min ? `${formatMoney(min, o.currency)}–${formatMoney(max, o.currency)}` : formatMoney(min, o.currency);
-    return o.compensation_type === "barter" ? `${amount} in products` : amount;
-  }
-  if (o.compensation_type === "barter") return "Barter (products, no fee)";
-  if (o.compensation_type === "unpaid") return "Unpaid";
-  if (o.compensation_status === "requested_rate") return "They ask for her rate";
-  return "Pay not mentioned";
-}
 
 function dateText(o: Card): string | null {
   if (o.next_deadline_at) {
@@ -64,9 +52,15 @@ export function OpportunityCard({ o }: { o: Card }) {
         {o.category_name && <span className="text-muted">{o.category_name}</span>}
         {o.from_historical && <span className="rounded-full border border-line px-2 py-0.5 text-muted">Earlier mail</span>}
         {emails > 1 && <span className="text-muted">· {emails} emails</span>}
+        {!o.is_read && <span className="rounded-full bg-ink px-2 py-0.5 font-semibold text-paper">Unread</span>}
+        {o.snoozed_until && o.snoozed_until.getTime() > Date.now() && <span className="rounded-full border border-line px-2 py-0.5 text-muted">Snoozed</span>}
       </div>
 
-      <h2 className="mt-3 font-display text-xl font-semibold leading-snug text-balance">{o.title}</h2>
+      <h2 className="mt-3 font-display text-xl font-semibold leading-snug text-balance">
+        <Link href={`/opportunities/${o.id}`} className="decoration-gel decoration-2 underline-offset-4 hover:underline">
+          {o.title}
+        </Link>
+      </h2>
       {who && <p className="mt-0.5 text-sm text-muted">{who}</p>}
       {o.summary && <p className="mt-3 max-w-3xl leading-relaxed">{o.summary}</p>}
 

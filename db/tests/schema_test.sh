@@ -61,5 +61,12 @@ check "AI usage records only known steps" "insert into ai_usage(step,model,ok) v
 check "AI usage can't have negative token counts" "insert into ai_usage(step,model,input_tokens,ok) values ('triage','m',-1,true)" error
 check "AI usage records a valid call" "insert into ai_usage(step,model,input_tokens,output_tokens,ok) values ('triage','claude-haiku-5-5',120,8,true)" ok
 
+# Dashboard (0004)
+check "a correction must belong to something" "insert into corrections(field_name, new_value) values ('title', '\"x\"')" error
+check "a correction on an email is accepted" "insert into gmail_accounts(id,email,status) values ('00000000-0000-0000-0000-0000000000a9','third@gmail.com','disconnected'); insert into emails(id,gmail_account_id,gmail_message_id,gmail_thread_id,received_at) values ('00000000-0000-0000-0000-0000000000e9','00000000-0000-0000-0000-0000000000a9','c1','c1',now()); insert into corrections(email_id, field_name, new_value) values ('00000000-0000-0000-0000-0000000000e9','classification','\"unrelated\"')" ok
+check "deleting an inbox deletes its corrections too" "delete from gmail_accounts where id='00000000-0000-0000-0000-0000000000a9'" ok
+check "no correction is left behind" "select 1/(1-count(*))::int from corrections" ok
+check "opportunities start not review-cleared" "insert into opportunities(gmail_account_id,title) values ('$NEWACC','y'); select 1/(count(*) filter (where not review_cleared))::int from opportunities" ok
+
 echo
 [ "$fails" -eq 0 ] && echo "All schema checks passed." || { echo "$fails schema check(s) failed."; exit 1; }
