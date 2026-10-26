@@ -153,8 +153,8 @@ export async function enqueue(
   if (messageIds.length === 0) return 0;
   const result = await getPool().query(
     `INSERT INTO gmail_fetch_queue (gmail_account_id, gmail_message_id, is_historical, source)
-     SELECT $1, id, $3, $4 FROM unnest($2::text[]) AS id
-     WHERE NOT EXISTS (SELECT 1 FROM emails e WHERE e.gmail_account_id = $1 AND e.gmail_message_id = id)
+     SELECT $1::uuid, m.msg_id, $3::boolean, $4::text FROM unnest($2::text[]) AS m(msg_id)
+     WHERE NOT EXISTS (SELECT 1 FROM emails e WHERE e.gmail_account_id = $1::uuid AND e.gmail_message_id = m.msg_id)
      ON CONFLICT DO NOTHING`,
     [accountId, messageIds, isHistorical, source],
   );
