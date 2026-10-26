@@ -3,6 +3,8 @@
 import { parseAllowlist } from "./allowlist.ts";
 import { assertSecret } from "./signed-value.ts";
 import { parseEncryptionKey } from "./token-crypto.ts";
+import { TELEGRAM_TOKEN_PATTERN, webhookSecretFor, type TelegramConfig } from "./alerts/telegram.ts";
+import { deriveVapidKeys, type VapidKeys } from "./alerts/webpush.ts";
 
 export type WebConfig = {
   appUrl: string;
@@ -52,6 +54,43 @@ export function readAiConfig(env: NodeJS.ProcessEnv = process.env): AiConfig {
     apiKey: v.ANTHROPIC_API_KEY!,
     triageModel: env.ANTHROPIC_TRIAGE_MODEL?.trim() || DEFAULT_TRIAGE_MODEL,
     extractModel: env.ANTHROPIC_EXTRACT_MODEL?.trim() || DEFAULT_EXTRACT_MODEL,
+  };
+}
+
+export type AlertConfig = {
+  appUrl: string;
+  admins: Set<string>;
+  /** Null when TELEGRAM_BOT_TOKEN isn't set: Telegram alerts are simply off. */
+  telegram: TelegramConfig | null;
+  push: { keys: VapidKeys; subject: string; extraOrigins: string[] };
+};
+
+/** What alerts need. Telegram is optional; phone notifications need nothing extra. */
+export function readAlertConfig(env: NodeJS.ProcessEnv = process.env): AlertConfig {
+  const v = required(env, ["APP_URL", "ADMIN_EMAILS", "SESSION_SECRET"]);
+  let sessionSecret: string;
+  try {
+    sessionSecret = assertSecret(v.SESSION_SECRET);
+  } catch {
+    throw new ConfigError("SESSION_SECRET is too short. Use a generated secret of at least 32 characters.");
+  }
+  const token = env.TELEGRAM_BOT_TOKEN?.trim();
+  if (token && !TELEGRAM_TOKEN_PATTERN.test(token)) {
+    throw new ConfigError("TELEGRAM_BOT_TOKEN doesn't look like a bot token from @BotFather (numbers, a colon, then letters).");
+  }
+  const appUrl = v.APP_URL!.replace(/\/+$/, "");
+  return {
+    appUrl,
+    admins: parseAllowlist(v.ADMIN_EMAILS),
+    telegram: token
+      ? { token, apiBase: env.TELEGRAM_API_BASE?.trim().replace(/\/+$/, "") || "https://api.telegram.org", webhookSecret: webhookSecretFor(token, sessionSecret) }
+      : null,
+    push: {
+      keys: deriveVapidKeys(sessionSecret),
+      subject: /^https:\/\//.test(appUrl) ? appUrl : "mailto:alerts@spotlight.invalid",
+      // Only for automated tests that run a stand-in push service.
+      extraOrigins: (env.PUSH_TEST_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    },
   };
 }
 

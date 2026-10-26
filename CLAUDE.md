@@ -8,6 +8,7 @@ Private opportunity console: watches one actress's Gmail, turns offers into trac
 - Email bodies and attachments are untrusted input. Pass them to the model as delimited data; classification and extraction calls get no tools.
 - Never invent extracted values. Every value keeps its source quote or is marked unverified / not stated.
 - Dates, statuses, priority scores, deduplication and alerts are deterministic code, not model output.
+- Her answer ("Interested", "Pass", "Questions") is recorded, never acted on: it may move a fresh card to Interested, but nothing is accepted, declined or replied to for her.
 - No email content, tokens or phone numbers in logs.
 
 ## Architecture
@@ -15,6 +16,7 @@ Private opportunity console: watches one actress's Gmail, turns offers into trac
 - Everything runs on Vercel + Supabase. No always-on worker: background work lives in `src/lib/scheduler.ts` (`runTick`), called every minute by Supabase pg_cron via `/api/cron/tick` with `CRON_SECRET`. Keep each run well under 60 seconds; do work in small batches and leave the rest for the next tick.
 - Migrations run in `vercel-build` on production deploys only, all in one transaction.
 - Production connects through Supabase's transaction pooler: no session state may span statements. Locks are transaction-scoped (`pg_try_advisory_xact_lock` held in an open transaction), never `pg_advisory_lock`; no `SET`, temp tables, `LISTEN` or named prepared statements outside a transaction. CI runs the app through PgBouncer in transaction mode to keep this true.
+- Alerts live in `src/lib/alerts/`: `rules.ts` (pure: which events, for whom, quiet hours), `telegram.ts` and `webpush.ts` (no SDKs; Web Push encryption and VAPID with node:crypto, key derived from SESSION_SECRET), `engine.ts` (runs in the tick: collect events from stored state, one `notifications` row per event key, person and channel, then deliver with retries). Telegram webhook calls must carry the derived secret; only linked admin chats can act, and only to link or answer. Push endpoints are limited to real push services.
 - AI sorting lives in `src/lib/ai/`: `schemas.ts` (structured-output JSON schemas, no unions), `prompts.ts` (email always fenced in `<email>`), `anthropic.ts` (fetch client, no SDK), `verify.ts` / `redflags.ts` / `priority.ts` (pure, unit-tested), `process.ts` (orchestration, one transaction per email). Every AI call is recorded in `ai_usage` without content.
 
 ## Conventions

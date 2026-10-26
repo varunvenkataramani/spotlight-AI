@@ -2,12 +2,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   addNote,
+  addReminder,
+  answerForHer,
+  cancelReminder,
   changeStatus,
   correctField,
   EditError,
+  flagForHer,
   resolveDuplicate,
   reviewOpportunity,
   snooze,
+  withdrawFlag,
 } from "@/server/actions.ts";
 import { backWith, safeBackPath } from "@/server/form-redirect.ts";
 import { isCrossSite, isUuid } from "@/server/request-guard.ts";
@@ -47,6 +52,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
       case "correct":
         return backWith(request, back, "done", await correctField(admin, id, form));
+      case "flag":
+        return backWith(request, back, "done", await flagForHer(admin, id, form.get("note")));
+      case "unflag":
+        return backWith(request, back, "done", await withdrawFlag(admin, id));
+      case "answer":
+        return backWith(request, back, "done", await answerForHer(admin, id, form.get("answer"), form.get("note"), "spotlight"));
+      case "remind":
+        return backWith(request, back, "done", await addReminder(admin, id, form));
+      case "cancel_reminder":
+        return backWith(request, back, "done", await cancelReminder(admin, id, form.get("reminder")));
       default:
         return backWith(request, back, "error", "That action isn't available.");
     }

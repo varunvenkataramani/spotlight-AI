@@ -4,9 +4,10 @@ import { notFound } from "next/navigation";
 import { ActionForm, BUTTON, BUTTON_QUIET, EmailCard, FieldRow, Flash, INPUT, Timeline } from "@/components/detail";
 import { dayValueIST, STATUS_LABEL, STATUSES } from "@/lib/edits.ts";
 import { formatDay, payText, relativeDay } from "@/lib/format.ts";
-import { getDetail, type FieldSource } from "@/server/opportunity-detail.ts";
+import { getDetail, type Detail, type FieldSource, type ReminderRow } from "@/server/opportunity-detail.ts";
 import { markOpened } from "@/server/actions.ts";
 import { isUuid } from "@/server/request-guard.ts";
+import { requireAdmin, type AdminSession } from "@/server/session.ts";
 
 export const metadata: Metadata = { title: "Opportunity" };
 
@@ -36,9 +37,10 @@ export default async function OpportunityPage({
   const { id } = await params;
   const { done, error } = await searchParams;
   if (!isUuid(id)) notFound();
+  const me = await requireAdmin();
   const data = await getDetail(id);
   if (!data) notFound();
-  const { opportunity: o, sources, emails, timeline, categories } = data;
+  const { opportunity: o, sources, emails, timeline, categories, reminders, talentEmail } = data;
   if (!o.is_read) await markOpened(id);
 
   const src = (name: string): FieldSource | undefined => sources.findLast((s) => s.field_name === name);
@@ -169,6 +171,10 @@ export default async function OpportunityPage({
               </div>
             )}
           </section>
+
+          <HerCall o={o} me={me} talentEmail={talentEmail} back={back} />
+
+          <Reminders id={id} reminders={reminders} me={me} back={back} />
 
           <section aria-labelledby="h-why">
             <h2 id="h-why" className="font-display text-xl font-semibold">Why this priority</h2>
@@ -360,6 +366,137 @@ export default async function OpportunityPage({
         </section>
       </div>
     </>
+  );
+}
+
+const ANSWER_LABEL = { interested: "Interested", pass: "Pass", questions: "Has questions" } as const;
+const WHEN = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+/** Putting the offer to her, and her answer. */
+function HerCall({ o, me, talentEmail, back }: { o: Detail; me: AdminSession; talentEmail: string | null; back: string }) {
+  const isHer = talentEmail === me.email;
+  const waiting = o.flagged_for_talent_at && !o.talent_response;
+  return (
+    <section aria-labelledby="h-her" className="rounded-2xl border border-line bg-surface p-5">
+      <h2 id="h-her" className="font-display text-xl font-semibold">{isHer ? "Your call" : "Her call"}</h2>
+
+      {!talentEmail ? (
+        <p className="mt-2 text-sm text-muted">
+          To send offers to her with Interested, Pass and Questions buttons, choose which admin is the actress in{" "}
+          <Link href="/settings" className="underline decoration-gel decoration-2 underline-offset-4">Settings</Link>.
+        </p>
+      ) : !o.flagged_for_talent_at ? (
+        isHer ? (
+          <p className="mt-2 text-sm text-muted">Not sent to you yet. You can still set the status above.</p>
+        ) : (
+          <ActionForm id={o.id} action="flag" className="mt-3 space-y-2">
+            <input type="hidden" name="back" value={back} />
+            <label htmlFor="flag-note" className="text-sm text-muted">
+              Sends it to her in Telegram, on her phone and in Spotlight. Add a line for her if you like:
+            </label>
+            <textarea id="flag-note" name="note" rows={2} maxLength={300} placeholder="e.g. “Good brand, and the fee is fair.”" className={INPUT} />
+            <button className={BUTTON}>Flag for her</button>
+          </ActionForm>
+        )
+      ) : (
+        <div className="mt-2 space-y-3 text-sm">
+          <p className="text-muted">
+            {isHer ? "Sent to you" : "Sent to her"} {WHEN.format(o.flagged_for_talent_at)}
+            {o.flagged_by_name ? ` by ${o.flagged_by_name}` : ""}.
+          </p>
+          {o.talent_response && o.talent_responded_at && (
+            <p className="rounded-xl bg-paper px-4 py-3">
+              <span className="font-semibold">{`${isHer ? "You said" : "She said"}: ${ANSWER_LABEL[o.talent_response]}`}</span>
+              <span className="text-muted">{` · ${WHEN.format(o.talent_responded_at)}`}</span>
+              {o.talent_response_note && <span className="mt-1 block whitespace-pre-wrap">“{o.talent_response_note}”</span>}
+            </p>
+          )}
+          {(waiting || isHer) && (
+            <ActionForm id={o.id} action="answer" className="space-y-2">
+              <input type="hidden" name="back" value={back} />
+              <p className="font-medium">{isHer ? (waiting ? "Are you interested?" : "Change your answer") : "Answer for her (if she told you directly)"}</p>
+              <textarea name="note" rows={2} maxLength={1000} placeholder={isHer ? "Questions or a note for your team (optional)" : "What she said (optional)"} className={INPUT} />
+              <div className="flex flex-wrap gap-2">
+                <button name="answer" value="interested" className={BUTTON}>Interested</button>
+                <button name="answer" value="pass" className={BUTTON_QUIET}>Pass</button>
+                <button name="answer" value="questions" className={BUTTON_QUIET}>Questions</button>
+              </div>
+            </ActionForm>
+          )}
+          {!isHer && (
+            <div className="flex flex-wrap gap-2">
+              {o.talent_response && (
+                <ActionForm id={o.id} action="flag">
+                  <input type="hidden" name="back" value={back} />
+                  <button className={BUTTON_QUIET}>Ask her again</button>
+                </ActionForm>
+              )}
+              <ActionForm id={o.id} action="unflag">
+                <input type="hidden" name="back" value={back} />
+                <button className={BUTTON_QUIET}>{waiting ? "Withdraw" : "Clear her answer"}</button>
+              </ActionForm>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Reminders({ id, reminders, me, back }: { id: string; reminders: ReminderRow[]; me: AdminSession; back: string }) {
+  const tomorrow = new Date(Date.now() + 24 * 3600_000);
+  return (
+    <section aria-labelledby="h-remind">
+      <h2 id="h-remind" className="font-display text-xl font-semibold">Reminders</h2>
+      {reminders.length > 0 ? (
+        <ul className="mt-3 divide-y divide-line text-sm">
+          {reminders.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span className="min-w-0">
+                <span className="font-medium tabular-nums">{WHEN.format(r.due_at)}</span>
+                <span className="text-muted"> · {r.for_user === null ? "for both of you" : r.for_user === me.userId ? "for you" : `for ${r.created_by_name ?? "the other admin"}`}</span>
+                {r.note && <span className="block break-words">{r.note}</span>}
+              </span>
+              <ActionForm id={id} action="cancel_reminder">
+                <input type="hidden" name="reminder" value={r.id} />
+                <input type="hidden" name="back" value={back} />
+                <button className="text-sm text-muted underline underline-offset-4 hover:text-ink">Cancel</button>
+              </ActionForm>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-muted">Set one to get an alert at a time you choose, for example to follow up or to check a contract.</p>
+      )}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-sm font-medium">Add a reminder</summary>
+        <ActionForm id={id} action="remind" className="mt-3 grid gap-2 sm:grid-cols-2">
+          <input type="hidden" name="back" value={back} />
+          <label className="grid gap-1 text-xs text-muted">
+            Day
+            <input type="date" name="day" defaultValue={dayValueIST(tomorrow)} className={INPUT} required />
+          </label>
+          <label className="grid gap-1 text-xs text-muted">
+            Time (India)
+            <input type="time" name="time" defaultValue="10:00" className={INPUT} required />
+          </label>
+          <label className="grid gap-1 text-xs text-muted sm:col-span-2">
+            What about (optional)
+            <input name="note" maxLength={120} placeholder="e.g. Follow up on the contract" className={INPUT} />
+          </label>
+          <label className="grid gap-1 text-xs text-muted">
+            For
+            <select name="who" defaultValue="me" className={INPUT}>
+              <option value="me">Just me</option>
+              <option value="both">Both of us</option>
+            </select>
+          </label>
+          <div className="flex items-end">
+            <button className={BUTTON}>Set reminder</button>
+          </div>
+        </ActionForm>
+      </details>
+    </section>
   );
 }
 

@@ -26,6 +26,7 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Authorization: Bearer 
 # 3. With the secret it runs, and health then reports everything up.
 tick=$(curl -s --max-time 75 -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick")
 grep -q '"ran":true' <<<"$tick" && pass "tick with secret runs" || fail "tick: $tick"
+grep -q '"alerts":"ok"' <<<"$tick" && pass "the run includes alerts" || fail "alerts step: $tick"
 health=$(curl -s "$BASE/api/health")
 grep -q '"ok":true' <<<"$health" && pass "health reports database and scheduler up" || fail "health after tick: $health"
 
@@ -42,7 +43,7 @@ code=$(curl -s -o /tmp/login.html -w "%{http_code}" "$BASE/login")
 [ "$code" = "200" ] && grep -q "Continue with Google" /tmp/login.html && pass "sign-in page renders" || fail "sign-in page: HTTP $code"
 
 # 6. Private pages redirect to sign-in when there is no session.
-for path in / /opportunities /review /settings; do
+for path in / /opportunities /review /alerts /settings; do
   loc=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" "$BASE$path")
   [[ "$loc" =~ ^30[0-9]\ .*/login ]] && pass "$path requires sign-in" || fail "$path is not protected: $loc"
 done
@@ -69,6 +70,18 @@ code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/auth/logout")
 h=$(curl -s -D - -o /dev/null "$BASE/login")
 grep -qi "^x-frame-options: DENY" <<<"$h" && pass "pages cannot be framed" || fail "X-Frame-Options missing"
 grep -qi "^x-powered-by" <<<"$h" && fail "X-Powered-By header leaks" || pass "no X-Powered-By header"
+
+# 12. Phone home-screen and notification files are public; the Telegram webhook is off without a bot.
+code=$(curl -s -o /tmp/sw.js -w "%{http_code} %{content_type}" "$BASE/sw.js")
+[[ "$code" == 200*javascript* ]] && grep -q "showNotification" /tmp/sw.js && pass "the service worker is served" || fail "sw.js: $code"
+code=$(curl -s -o /tmp/manifest.json -w "%{http_code}" "$BASE/manifest.webmanifest")
+[ "$code" = "200" ] && grep -q '"display":"standalone"' /tmp/manifest.json && pass "the app manifest is served" || fail "manifest: $code"
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"update_id":1}' "$BASE/api/telegram/webhook")
+[ "$code" = "404" ] && pass "the Telegram webhook is off without a bot token" || fail "webhook without token: $code"
+for path in /api/settings /api/push; do
+  loc=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST "$BASE$path")
+  [[ "$loc" =~ ^30[0-9]\ .*/login ]] && pass "$path requires sign-in" || fail "$path is not protected: $loc"
+done
 
 echo
 if [ "$fails" -ne 0 ]; then

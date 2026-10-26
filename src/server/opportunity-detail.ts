@@ -47,7 +47,14 @@ export type Detail = {
   duplicate_title: string | null;
   first_received_at: Date | null;
   last_activity_at: Date;
+  flagged_for_talent_at: Date | null;
+  flagged_by_name: string | null;
+  talent_response: "interested" | "pass" | "questions" | null;
+  talent_response_note: string | null;
+  talent_responded_at: Date | null;
 };
+
+export type ReminderRow = { id: string; due_at: Date; note: string | null; for_user: string | null; created_by_name: string | null };
 
 export type FieldSource = {
   field_name: string;
@@ -82,17 +89,19 @@ export type TimelineItem = {
 
 export async function getDetail(id: string) {
   const rows = await query<Detail>(
-    `SELECT o.*, c.slug AS category_slug, c.name AS category_name, d.title AS duplicate_title
+    `SELECT o.*, c.slug AS category_slug, c.name AS category_name, d.title AS duplicate_title,
+            COALESCE(fu.name, fu.email) AS flagged_by_name
      FROM opportunities o
      LEFT JOIN categories c ON c.id = o.category_id
      LEFT JOIN opportunities d ON d.id = o.possible_duplicate_of
+     LEFT JOIN users fu ON fu.id = o.flagged_by
      WHERE o.id = $1`,
     [id],
   );
   const opportunity = rows[0];
   if (!opportunity) return null;
 
-  const [sources, emails, timeline, categories] = await Promise.all([
+  const [sources, emails, timeline, categories, reminders, talent] = await Promise.all([
     query<FieldSource>(
       `SELECT f.field_name, f.value_text, f.source_quote, f.is_verified, f.email_id,
               COALESCE(u.name, u.email) AS corrected_by_name
@@ -118,6 +127,15 @@ export async function getDetail(id: string) {
       [id],
     ),
     query<{ slug: string; name: string }>(`SELECT slug, name FROM categories WHERE is_enabled ORDER BY sort_order, name`),
+    query<ReminderRow>(
+      `SELECT r.id, r.due_at, r.note, r.for_user, COALESCE(u.name, u.email) AS created_by_name
+       FROM reminders r LEFT JOIN users u ON u.id = r.created_by
+       WHERE r.opportunity_id = $1 AND r.status = 'pending' AND r.kind = 'custom'
+       ORDER BY r.due_at`,
+      [id],
+    ),
+    query<{ value: unknown }>(`SELECT value FROM preferences WHERE key = 'talent_email'`),
   ]);
-  return { opportunity, sources, emails, timeline, categories };
+  const talentEmail = typeof talent[0]?.value === "string" ? (talent[0].value as string) : null;
+  return { opportunity, sources, emails, timeline, categories, reminders, talentEmail };
 }

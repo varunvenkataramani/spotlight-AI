@@ -13,7 +13,7 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 - **Gmail** is checked every minute in that same run, through Gmail's change history (no Pub/Sub needed).
 - **Database migrations** run automatically on every production deploy (`vercel-build`).
 
-## What works today (Milestones 1 to 4)
+## What works today (Milestones 1 to 5a)
 
 - Google sign-in for exactly two admins (allow-list), with PKCE, signed httpOnly cookies, and a re-check on every request.
 - The complete database schema, with safety rules enforced by Postgres itself: one row per Gmail message, an append-only activity log, drafts that can't be marked sent without a recorded approval, and de-duplicated alerts.
@@ -26,9 +26,11 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 - **Detail page** per offer: every detail beside the email words it came from (highlighted in the email), edit any wrong detail (pay typed as "1.5 lakh" or "75k", dates, deliverables, category…), status, notes, snooze, "checked: it's genuine", not relevant, merge or keep a suggested duplicate, and a timeline of everything that happened and who did it. Priority is recalculated in code after every change.
 - **Needs review** queue with "It's an offer" / "Not an offer" buttons. These decisions are remembered by sender and guide future sorting (only sender addresses or domains reach the AI, never email words).
 - **Overview** leads with what needs you now and what changed recently.
+- **Alerts** (in Spotlight, Telegram and phone notifications): strong new offers, replies due within a day (urgent in the last 3 hours), shoots coming up, their replies and changed terms, nudges when an offer waits too long, Gmail problems, and reminders you set on any offer. Worked out by plain code every minute, never sent twice, retried if Telegram or a phone's push service fails. Each admin chooses what they hear about and their quiet hours (phones wait; Telegram arrives silently).
+- **Flag for her**: the manager puts an offer to her with a note. She gets it with **Interested / Pass / Questions** buttons in Telegram, in Spotlight's overview and on the offer; a question she types in Telegram is saved on the offer. Her answer reaches the manager straight away. Nothing is accepted or declined for her.
 - Automated checks on every push (see `.github/workflows/ci.yml`).
 
-Not built yet: replies, alerts and reminders (5), replies and alerts (5), and the Claude connector (6).
+Not built yet: reply drafts (5b, needs the Claude API key) and the Claude connector (6).
 
 ## Project layout
 
@@ -72,6 +74,7 @@ Import the GitHub repository and set the environment variables below (Production
 | `TOKEN_ENCRYPTION_KEY` | Encrypts Gmail tokens (used from Milestone 2) |
 | `CRON_SECRET` | Shared secret for the scheduler's calls to `/api/cron/tick` |
 | `ANTHROPIC_API_KEY` | Claude API key for AI sorting (console.anthropic.com); without it, sorting is off |
+| `TELEGRAM_BOT_TOKEN` | Optional: a bot from @BotFather for Telegram alerts. Phone notifications need nothing extra |
 
 Each secret is 32 random bytes in base64, a different value for each. Generate one with `npm run gen:secret`, or in any browser console:
 
@@ -85,7 +88,13 @@ Vercel's Hobby plan is for personal, non-commercial use. Move to Pro before runn
 
 Open `db/setup/supabase_scheduler.sql`, replace `PASTE_CRON_SECRET_HERE` and `YOUR-APP.vercel.app`, and run it in **Supabase > SQL Editor**. Within two minutes, **Settings** in Spotlight shows background jobs as running and `/api/health` answers `"ok": true`.
 
-### 5. Run locally (optional)
+### 5. Alerts (optional, any time)
+
+- **Telegram:** in Telegram, message **@BotFather**, send `/newbot`, name it (for example "Spotlight alerts"), and put the token it gives you in Vercel as `TELEGRAM_BOT_TOKEN`. Redeploy. Then each admin opens **Settings → Alerts → Connect Telegram** and presses **Start** in the bot.
+- **Phone notifications:** each admin opens **Settings → Alerts** on their phone and turns notifications on. On iPhone, first add Spotlight to the Home Screen from Safari's Share menu, then open it from there.
+- **Who the actress is:** **Settings → Admins**. "Flag for her" sends offers to that account.
+
+### 6. Run locally (optional)
 
 ```bash
 cp .env.example .env.local   # fill it in; APP_URL=http://localhost:3000
@@ -108,6 +117,7 @@ bash scripts/smoke.sh  # after npm run build: starts the app and probes it end t
 bash scripts/test/gmail-e2e.sh  # after npm run build: the app against a fake Google, connect to disconnect
 bash scripts/test/ai-e2e.sh     # after npm run build: AI sorting against a fake Claude, 40+ checks
 bash scripts/test/dashboard-e2e.sh  # after npm run build: every dashboard action, filters, guards
+bash scripts/test/alerts-e2e.sh     # after npm run build: alerts against a fake Telegram and a fake phone push service (needs jq)
 ```
 
 All of these run on every push in GitHub Actions.

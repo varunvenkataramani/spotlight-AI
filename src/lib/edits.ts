@@ -102,6 +102,25 @@ export function parseDayIST(raw: unknown, endOfDay = true): Date | null {
   return new Date(utc);
 }
 
+/** A reminder time: a calendar day and a clock time (HH:MM) in India time, which must be ahead of now and within a year. */
+export function parseReminderTime(rawDay: unknown, rawTime: unknown, now: Date = new Date()): Date {
+  const day = parseDayIST(rawDay, false);
+  if (!day) throw new EditError("Pick a day for the reminder.");
+  const m = String(rawTime ?? "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new EditError("Pick a time for the reminder.");
+  const at = new Date(day.getTime() + (Number(m[1]) * 60 + Number(m[2])) * 60_000);
+  if (at.getTime() <= now.getTime() + 60_000) throw new EditError("Pick a time later than now.");
+  if (at.getTime() > now.getTime() + 366 * 86_400_000) throw new EditError("Reminders can be up to a year ahead.");
+  return at;
+}
+
+/** Quiet hours as typed in a time field (HH:MM). */
+export function parseClock(raw: unknown): string {
+  const m = String(raw ?? "").trim().match(/^(\d{1,2}):(\d{2})(?::00)?$/);
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) throw new EditError("Pick a time like 23:00.");
+  return `${m[1]!.padStart(2, "0")}:${m[2]}`;
+}
+
 /** The India-time calendar day of an instant, for a date field's value. */
 export function dayValueIST(d: Date | null): string {
   return d ? new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10) : "";
