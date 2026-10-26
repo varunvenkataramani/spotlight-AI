@@ -14,6 +14,7 @@ Private opportunity console: watches one actress's Gmail, turns offers into trac
 
 - Everything runs on Vercel + Supabase. No always-on worker: background work lives in `src/lib/scheduler.ts` (`runTick`), called every minute by Supabase pg_cron via `/api/cron/tick` with `CRON_SECRET`. Keep each run well under 60 seconds; do work in small batches and leave the rest for the next tick.
 - Migrations run in `vercel-build` on production deploys only.
+- AI sorting lives in `src/lib/ai/`: `schemas.ts` (structured-output JSON schemas, no unions), `prompts.ts` (email always fenced in `<email>`), `anthropic.ts` (fetch client, no SDK), `verify.ts` / `redflags.ts` / `priority.ts` (pure, unit-tested), `process.ts` (orchestration, one transaction per email). Every AI call is recorded in `ai_usage` without content.
 
 ## Conventions
 

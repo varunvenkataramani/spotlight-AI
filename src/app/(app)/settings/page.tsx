@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { AiPanel } from "@/components/AiPanel";
 import { InboxPanel } from "@/components/InboxPanel";
 import { PageHeader, StatusDot, formatIST } from "@/components/ui";
 import { readWebConfig } from "@/lib/config.ts";
 import { getInboxStatus, type InboxStatus } from "@/server/gmail.ts";
 import { getSystemHealth } from "@/server/health.ts";
+import { getAiOverview, type AiOverview } from "@/server/opportunities.ts";
 import { listAdmins, type AdminRow } from "@/server/users.ts";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -14,8 +16,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const health = await getSystemHealth();
   let admins: AdminRow[] = [];
   let inbox: InboxStatus | null = null;
+  let ai: AiOverview | null = null;
   if (health.database === "ok") {
-    [admins, inbox] = await Promise.all([listAdmins(), getInboxStatus()]);
+    [admins, inbox, ai] = await Promise.all([listAdmins(), getInboxStatus(), getAiOverview()]);
   }
   const lastLogin = new Map(admins.map((a) => [a.email, a.last_login_at]));
 
@@ -32,6 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
       <div className="space-y-6">
         {health.database === "ok" && <InboxPanel inbox={inbox} outcome={outcome} />}
+        {ai && <AiPanel ai={ai} />}
 
         <section className="rounded-2xl border border-line bg-surface p-6">
           <h2 className="font-display text-xl font-semibold">System status</h2>

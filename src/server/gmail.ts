@@ -150,11 +150,14 @@ export type SyncedEmailRow = {
   received_at: Date;
   is_historical: boolean;
   has_attachments: boolean;
+  processing_state: string;
+  classification: string | null;
 };
 
 export async function listSyncedEmails(limit = 50): Promise<SyncedEmailRow[]> {
   return query<SyncedEmailRow>(
-    `SELECT id, from_name, from_email, subject, snippet, received_at, is_historical, has_attachments
+    `SELECT id, from_name, from_email, subject, snippet, received_at, is_historical, has_attachments,
+            processing_state, classification
      FROM emails ORDER BY received_at DESC LIMIT $1`,
     [limit],
   );

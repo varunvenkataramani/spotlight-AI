@@ -72,6 +72,9 @@ jobs:
       - name: Gmail end to end (fake Google)
         run: bash scripts/test/gmail-e2e.sh
 
+      - name: AI sorting end to end (fake Claude)
+        run: bash scripts/test/ai-e2e.sh
+
       - name: Save lockfile
         if: always()
         uses: actions/upload-artifact@v4

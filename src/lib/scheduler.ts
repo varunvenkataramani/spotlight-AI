@@ -1,22 +1,29 @@
 // Scheduled background work. Supabase's scheduler (pg_cron) calls /api/cron/tick every
 // minute, and that route calls runTick(). Framework-free so it can also be run from a script.
 //
-// Milestone 2: Gmail sync. Milestone 3 adds the AI pipeline; 5 alerts and reminders.
-import { ConfigError, readGmailConfig } from "./config.ts";
-import { getPool } from "./db.ts";
+// Each run: Gmail sync (Milestone 2), then AI sorting (Milestone 3). Milestone 5 adds alerts and reminders.
+import { ConfigError, readAiConfig, readGmailConfig } from "./config.ts";
+import { getPool, query } from "./db.ts";
+import { anthropicBaseUrl } from "./ai/anthropic.ts";
+import { processPendingEmails, type AiReport } from "./ai/process.ts";
 import { googleEndpoints } from "./gmail/google.ts";
 import { syncAllInboxes } from "./gmail/sync.ts";
 
 const TICK_LOCK_ID = 727_002; // unique to the scheduler; migrations use 727_001
 export const SCHEDULER_ID = "scheduler";
+/** Gmail sync stops starting new work after this long, leaving the rest of the run for AI sorting. */
+export const GMAIL_BUDGET_MS = 22_000;
 /** Stop starting new work after this long, well inside the 60-second function limit. */
 export const TICK_BUDGET_MS = 45_000;
+
+export type AiStatus = { state: "ok" | "off" | "account_problem" | "failed"; message: string | null; at: string };
 
 export type TickResult = {
   ran: boolean;
   reason?: string;
   tasks: Record<string, "ok" | "skipped" | "failed">;
   gmail?: { inboxes: number; queuedNew: number; queuedScan: number; fetched: number; failed: number; reconnectNeeded: number };
+  ai?: AiReport;
   durationMs: number;
 };
 
@@ -39,13 +46,10 @@ export async function runTick(): Promise<TickResult> {
       );
       result.tasks.heartbeat = "ok";
 
+      // 1. Gmail
       try {
         const config = readGmailConfig();
-        const reports = await syncAllInboxes({
-          ...config,
-          endpoints: googleEndpoints(),
-          deadline: started + TICK_BUDGET_MS,
-        });
+        const reports = await syncAllInboxes({ ...config, endpoints: googleEndpoints(), deadline: started + GMAIL_BUDGET_MS });
         const sum = (k: "queuedNew" | "queuedScan" | "fetched" | "failed") => reports.reduce((n, r) => n + r[k], 0);
         result.gmail = {
           inboxes: reports.length,
@@ -58,10 +62,30 @@ export async function runTick(): Promise<TickResult> {
         result.tasks.gmail = reports.some((r) => r.status === "failed") ? "failed" : "ok";
       } catch (error) {
         result.tasks.gmail = error instanceof ConfigError ? "skipped" : "failed";
-        if (!(error instanceof ConfigError)) {
-          console.error("Gmail sync failed:", error instanceof Error ? error.message : "unknown error");
-        }
+        if (!(error instanceof ConfigError)) console.error("Gmail sync failed:", error instanceof Error ? error.message : "unknown error");
       }
+
+      // 2. AI sorting
+      let ai: AiStatus;
+      try {
+        const config = readAiConfig();
+        result.ai = await processPendingEmails({ ...config, baseUrl: anthropicBaseUrl(), deadline: started + TICK_BUDGET_MS });
+        result.tasks.ai = result.ai.accountProblem ? "failed" : "ok";
+        ai = result.ai.accountProblem
+          ? { state: "account_problem", message: result.ai.accountProblem, at: new Date().toISOString() }
+          : { state: "ok", message: null, at: new Date().toISOString() };
+      } catch (error) {
+        const off = error instanceof ConfigError;
+        result.tasks.ai = off ? "skipped" : "failed";
+        if (!off) console.error("AI sorting failed:", error instanceof Error ? error.message : "unknown error");
+        ai = off
+          ? { state: "off", message: "Add ANTHROPIC_API_KEY in Vercel to turn on AI sorting.", at: new Date().toISOString() }
+          : { state: "failed", message: "The last sorting run failed; it will try again next minute.", at: new Date().toISOString() };
+      }
+      await query(`UPDATE worker_heartbeats SET info = jsonb_set(info, '{ai}', $2::jsonb) WHERE worker_id = $1`, [
+        SCHEDULER_ID,
+        JSON.stringify(ai),
+      ]);
 
       result.durationMs = Date.now() - started;
       return result;
