@@ -3,7 +3,7 @@
 # works in production, and checks that nothing depends on session state:
 # migrations, the scheduled run and its lock, and pages all work, and no lock is left behind.
 # Expects: npm run build done; DATABASE_URL pointing straight at Postgres (not the pooler);
-# pgbouncer installed. Uses port 6432 for the pooler.
+# pgbouncer installed. Uses port 6544 for the pooler (the system PgBouncer may already hold 6432).
 set -uo pipefail
 fails=0
 pass() { echo "PASS  $1"; }
@@ -31,7 +31,7 @@ $PGDB = host=$PGH port=$PGPORT dbname=$PGDB user=$PGU password=$PGP
 
 [pgbouncer]
 listen_addr = 127.0.0.1
-listen_port = 6432
+listen_port = 6544
 auth_type = plain
 auth_file = $WORK/userlist.txt
 pool_mode = transaction
@@ -43,7 +43,7 @@ pidfile = $WORK/pgbouncer.pid
 EOF
 pgbouncer -d "$WORK/pgbouncer.ini" || { echo "FAIL  pgbouncer didn't start"; exit 1; }
 trap 'kill "$(cat "$WORK/pgbouncer.pid" 2>/dev/null)" 2>/dev/null; kill $WEB 2>/dev/null' EXIT
-POOLED="postgresql://$PGU:$PGP@127.0.0.1:6432/$PGDB"
+POOLED="postgresql://$PGU:$PGP@127.0.0.1:6544/$PGDB"
 for _ in $(seq 1 20); do psql "$POOLED" -tAc "select 1" > /dev/null 2>&1 && break; sleep 0.5; done
 [ "$(psql "$POOLED" -tAc 'select 1' 2>/dev/null)" = "1" ] && pass "PgBouncer is running in transaction mode" || { fail "can't connect through PgBouncer: $(tail -5 "$WORK/pgbouncer.log")"; exit 1; }
 
