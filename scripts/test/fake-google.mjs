@@ -27,6 +27,10 @@ const scanIds = [...Array.from({ length: 150 }, (_, i) => `old-${i}`), "old-html
 
 function message(id) {
   if (state.extra.has(id)) return state.extra.get(id);
+  if (id === "old-broken") {
+    // Listed like any other email; fetching it always fails (see the messages/:id handler).
+    return { id, threadId: "t-broken", labelIds: ["INBOX"], internalDate: String(Date.now() - HOUR), payload: {} };
+  }
   if (id === "old-html") {
     return {
       id,
