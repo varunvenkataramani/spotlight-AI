@@ -10,18 +10,20 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 
 - **Pages and API routes** run on Vercel.
 - **Background work** (Gmail sync, AI processing, reminders) runs in `/api/cron/tick`, which Supabase's built-in scheduler (pg_cron) calls every minute with a shared secret. A database lock stops two runs from overlapping.
-- **Gmail push notifications** (from Milestone 2) go straight to a webhook route on Vercel.
+- **Gmail** is checked every minute in that same run, through Gmail's change history (no Pub/Sub needed).
 - **Database migrations** run automatically on every production deploy (`vercel-build`).
 
-## What works today (Milestone 1)
+## What works today (Milestones 1 and 2)
 
 - Google sign-in for exactly two admins (allow-list), with PKCE, signed httpOnly cookies, and a re-check on every request.
 - The complete database schema, with safety rules enforced by Postgres itself: one row per Gmail message, an append-only activity log, drafts that can't be marked sent without a recorded approval, and de-duplicated alerts.
 - Dashboard shell: Overview (live counts from the database), Opportunities, Needs review and Settings (system status and admins). Empty states say what will appear and when.
 - Scheduled background runs every minute; Settings and `/api/health` show if they stop.
+- Connect one Gmail inbox (read-only), with tokens encrypted at rest. New mail is read within about a minute; a first scan reads back a chosen number of days in the background. Failed downloads retry and stay visible. Mail missed during long outages is recovered, revoked access is flagged for reconnecting, and **Disconnect and delete data** revokes access and removes everything stored from that inbox.
+- **Synced mail** page listing what has been read.
 - Automated checks on every push (see `.github/workflows/ci.yml`).
 
-Not built yet: Gmail connection (Milestone 2), the AI pipeline (3), the full dashboard (4), replies and alerts (5), and the Claude connector (6).
+Not built yet: the AI pipeline (3), the full dashboard (4), replies and alerts (5), and the Claude connector (6).
 
 ## Project layout
 
@@ -41,8 +43,8 @@ Not built yet: Gmail connection (Milestone 2), the AI pipeline (3), the full das
 
 1. In [Google Cloud Console](https://console.cloud.google.com), create a project.
 2. Open **Google Auth Platform** (search for it in the top bar). Set it up as **External**, leave it in **Testing**, and under **Audience > Test users** add both admin Google accounts and the Gmail being connected.
-3. Enable the **Gmail API** and **Cloud Pub/Sub API** (used from Milestone 2).
-4. After the first Vercel deploy (step 3), open **Google Auth Platform > Clients > Create client**, type **Web application**, with the authorised redirect URI `https://YOUR-APP.vercel.app/api/auth/callback`. Copy the client ID and secret into Vercel.
+3. Enable the **Gmail API**. Under **Data Access**, add the scope `.../auth/gmail.readonly`.
+4. After the first Vercel deploy (step 3), open **Google Auth Platform > Clients > Create client**, type **Web application**, with two authorised redirect URIs: `https://YOUR-APP.vercel.app/api/auth/callback` (sign-in) and `https://YOUR-APP.vercel.app/api/gmail/callback` (connecting Gmail). Copy the client ID and secret into Vercel.
 
 ### 2. Database (Supabase)
 
@@ -97,6 +99,7 @@ npm test               # unit tests: encryption, cookies, allow-list, scheduler 
 npm run test:schema    # database rule checks (fresh migrated database in DATABASE_URL)
 npm run typecheck
 bash scripts/smoke.sh  # after npm run build: starts the app and probes it end to end
+bash scripts/test/gmail-e2e.sh  # after npm run build: the app against a fake Google, connect to disconnect
 ```
 
 All of these run on every push in GitHub Actions.
