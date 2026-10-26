@@ -68,8 +68,10 @@ export async function GET(request: NextRequest) {
     if (!outcome.ok) return finish("other_inbox_connected");
     return finish(outcome.reconnected ? "reconnected" : "connected");
   } catch (error) {
-    if (error instanceof GmailConnectError) return finish(error.code);
-    if (error instanceof SignInError) return finish("token_exchange_failed");
+    if (error instanceof GmailConnectError || error instanceof SignInError) {
+      console.warn(`Gmail connect refused (${error.code}): ${error.message}`);
+      return finish(error instanceof GmailConnectError ? error.code : "token_exchange_failed");
+    }
     console.error("Gmail connect failed:", error instanceof Error ? error.message : "unknown error");
     return finish("unknown");
   }

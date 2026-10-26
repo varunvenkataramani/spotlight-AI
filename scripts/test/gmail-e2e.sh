@@ -11,15 +11,19 @@ pass() { echo "PASS  $1"; }
 fail() {
   echo "FAIL  $1"; fails=$((fails + 1))
   # Also surface it as a GitHub annotation, readable without opening the log.
-  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=Gmail e2e::$(printf '%s' "$1" | head -c 300 | tr '\n' ' ')"
+  [ -n "${GITHUB_ACTIONS:-}" ] && [ "$fails" -le 6 ] && echo "::error title=Gmail e2e::$(printf '%s' "$1" | head -c 300 | tr '\n' ' ')"
   return 0
 }
 sql() { psql "$DATABASE_URL" -tA -c "$1"; }
 tick() { curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick"; }
 
+# Make sure no earlier app server still holds the port.
+for _ in $(seq 1 20); do curl -s -o /dev/null "$BASE/login" || break; sleep 1; done
+if curl -s -o /dev/null "$BASE/login"; then echo "FAIL  port 3000 is still in use by another server"; exit 1; fi
+
 node scripts/test/fake-google.mjs > /tmp/fake-google.log 2>&1 &
 FAKE_PID=$!
-GOOGLE_API_BASE_OVERRIDE="$FAKE" npm start > /tmp/web-gmail.log 2>&1 &
+GOOGLE_API_BASE_OVERRIDE="$FAKE" ./node_modules/.bin/next start > /tmp/web-gmail.log 2>&1 &
 WEB_PID=$!
 trap 'kill $FAKE_PID $WEB_PID 2>/dev/null' EXIT
 for _ in $(seq 1 60); do curl -s -o /dev/null "$BASE/login" && break; sleep 1; done
@@ -46,6 +50,8 @@ done
 grep -q "Connect Gmail" <(curl -s -H "Cookie: $SESSION" "$BASE/settings") && pass "settings offers Connect Gmail" || fail "no Connect Gmail button"
 
 # --- Connect ----------------------------------------------------------------------
+loc=$(curl -s -o /dev/null -w "%{redirect_url}" -H "Cookie: $SESSION" "$BASE/api/gmail/connect")
+[[ "$loc" == "$FAKE/auth?"* ]] && pass "test app talks to the fake Google" || { fail "connect goes to $loc, not the fake Google"; exit 1; }
 headers=$(curl -s -D - -o /dev/null "$BASE/api/gmail/connect")
 grep -qi "^location: .*/login" <<<"$headers" && pass "connecting Gmail requires sign-in" || fail "connect without session not refused"
 

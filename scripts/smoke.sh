@@ -7,7 +7,7 @@ fails=0
 pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; fails=$((fails + 1)); }
 
-npm start > /tmp/web.log 2>&1 &
+./node_modules/.bin/next start > /tmp/web.log 2>&1 &
 WEB=$!
 trap 'kill $WEB 2>/dev/null' EXIT
 
