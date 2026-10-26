@@ -57,7 +57,9 @@ post() {
 }
 pushapi() { curl -s --max-time 30 -w " %{http_code}" -X POST -H "Cookie: $1" -H "Origin: $BASE" -H "Content-Type: application/json" --data "$2" "$BASE/api/push"; }
 UPD=6000
-hook() { UPD=$((UPD + 1)); curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-Telegram-Bot-Api-Secret-Token: $SECRET" --data "$(printf "$1" "$UPD")" "$BASE/api/telegram/webhook"; }
+# Sends a Telegram update (the next update_id); the HTTP status is left in HOOK_CODE. Not for use in $(...):
+# the update counter must stay in this shell.
+hook() { UPD=$((UPD + 1)); HOOK_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -H "X-Telegram-Bot-Api-Secret-Token: $SECRET" --data "$(printf "$1" "$UPD")" "$BASE/api/telegram/webhook"); }
 mkopp() { # id title priority [reply_by sql]
   sql "INSERT INTO opportunities (id, gmail_account_id, title, organization, priority, status, compensation_type, compensation_status, amount_min, amount_max, currency, reply_by_at, first_received_at)
        VALUES ('$1', '$ACC', '$2', 'Glow Labs', '$3', 'new', 'paid', 'confirmed', 75000, 75000, 'INR', ${4:-NULL}, now())" > /dev/null
@@ -92,7 +94,8 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: applicat
 [ "$code" = "401" ] && pass "and with a wrong secret" || fail "wrong secret: $code"
 
 START='{"update_id":%s,"message":{"message_id":1,"chat":{"id":9001,"type":"private"},"text":"/start '"$CODE"'"}}'
-[ "$(hook "$START")" = "200" ] && [ "$(sql "SELECT telegram_chat_id FROM users WHERE id = '$A_ID'")" = "9001" ] \
+hook "$START"
+[ "$HOOK_CODE" = "200" ] && [ "$(sql "SELECT telegram_chat_id FROM users WHERE id = '$A_ID'")" = "9001" ] \
   && pass "pressing Start links her chat" || fail "link: $(sql "SELECT telegram_chat_id FROM users WHERE id = '$A_ID'")"
 [ "$(sent_to 9001 "Connected. Spotlight alerts for actress@example.com")" = "1" ] && pass "the bot confirms in the chat" || fail "no confirmation message"
 before=$(tgcount '.method == "sendMessage"')
