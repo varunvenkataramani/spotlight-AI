@@ -111,7 +111,7 @@ test("allow-list ignores case, spaces and junk entries", () => {
 
 test("missing settings are named, never their values", () => {
   assert.throws(
-    () => readWebConfig({ DATABASE_URL: "postgresql://x", SESSION_SECRET: "s".repeat(40) } as NodeJS.ProcessEnv),
+    () => readWebConfig({ DATABASE_URL: "postgresql://x", SESSION_SECRET: "s".repeat(40) } as unknown as NodeJS.ProcessEnv),
     (e: unknown) =>
       e instanceof ConfigError &&
       /APP_URL, ADMIN_EMAILS, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET/.test(e.message) &&
@@ -128,9 +128,9 @@ test("bad settings give a clear configuration error", () => {
     GOOGLE_CLIENT_SECRET: "secret",
     SESSION_SECRET: "s".repeat(40),
   };
-  assert.equal(readWebConfig({ ...base, APP_URL: "https://app.example/" } as NodeJS.ProcessEnv).appUrl, "https://app.example");
+  assert.equal(readWebConfig({ ...base, APP_URL: "https://app.example/" } as unknown as NodeJS.ProcessEnv).appUrl, "https://app.example");
   for (const override of [{ SESSION_SECRET: "short" }, { APP_URL: "app.example" }, { ADMIN_EMAILS: "nobody" }]) {
-    assert.throws(() => readWebConfig({ ...base, ...override } as NodeJS.ProcessEnv), ConfigError, JSON.stringify(override));
+    assert.throws(() => readWebConfig({ ...base, ...override } as unknown as NodeJS.ProcessEnv), ConfigError, JSON.stringify(override));
   }
 });
 
