@@ -8,7 +8,12 @@ BASE="http://localhost:3000"
 FAKE="http://localhost:4010"
 fails=0
 pass() { echo "PASS  $1"; }
-fail() { echo "FAIL  $1"; fails=$((fails + 1)); }
+fail() {
+  echo "FAIL  $1"; fails=$((fails + 1))
+  # Also surface it as a GitHub annotation, readable without opening the log.
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=Gmail e2e::$(printf '%s' "$1" | head -c 300 | tr '\n' ' ')"
+  return 0
+}
 sql() { psql "$DATABASE_URL" -tA -c "$1"; }
 tick() { curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" "$BASE/api/cron/tick"; }
 
@@ -123,6 +128,7 @@ curl -s "$FAKE/_control/stats" | grep -q '"revokeCalls":1' && pass "Google acces
 echo
 if [ "$fails" -ne 0 ]; then
   echo "--- web log ---"; tail -40 /tmp/web-gmail.log
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=Web log::$(grep -iE 'error|fail' /tmp/web-gmail.log | tail -5 | head -c 900 | tr '\n' '|')"
   echo "--- fake google log ---"; tail -10 /tmp/fake-google.log
   echo "$fails Gmail check(s) failed."; exit 1
 fi
