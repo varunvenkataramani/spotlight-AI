@@ -73,6 +73,9 @@ for _ in 1 2 3 4 5 6; do
   [ "$(sql "SELECT count(*) FROM emails")" -ge 152 ] && break
 done
 grep -q '"gmail":' /tmp/tick.json && pass "tick reports Gmail work" || fail "tick: $(cat /tmp/tick.json)"
+if [ "$(sql "SELECT count(*) FROM emails")" -lt 152 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then
+  echo "::error title=Sync diagnostics::tick=$(head -c 400 /tmp/tick.json) | inbox=$(sql "SELECT status||' err='||coalesce(last_error,'-')||' fails='||consecutive_failures||' hist='||coalesce(history_id,'-')||' listed='||scan_listed FROM gmail_accounts" | head -c 500) | queue=$(sql "SELECT count(*)||' '||coalesce(max(last_error),'-') FROM gmail_fetch_queue" | head -c 300)"
+fi
 [ "$(sql "SELECT count(*) FROM emails WHERE is_historical")" = "151" ] && pass "first scan stored 151 earlier emails" \
   || fail "earlier emails stored: $(sql "SELECT count(*) FROM emails WHERE is_historical")"
 [ "$(sql "SELECT count(*) FROM emails WHERE gmail_message_id='new-1' AND NOT is_historical")" = "1" ] && pass "new mail is stored and marked new" || fail "new mail missing"

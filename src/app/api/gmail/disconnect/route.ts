@@ -12,8 +12,13 @@ export async function POST(request: Request) {
   const admin = await requireAdmin();
   const go = (outcome: string) => NextResponse.redirect(new URL(`/settings?gmail=${outcome}`, request.url), 303);
 
-  const form = await request.formData();
-  if (form.get("confirm") !== "delete") return go("confirm_needed");
+  let confirmed = false;
+  try {
+    confirmed = (await request.formData()).get("confirm") === "delete";
+  } catch {
+    // No form body at all: treat as unconfirmed.
+  }
+  if (!confirmed) return go("confirm_needed");
 
   const target = await getInboxForDisconnect();
   if (!target) return go("disconnected");
