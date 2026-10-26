@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret, parseEncryptionKey } from "./token-crypto
 import { createSignedValue, readSignedValue } from "./signed-value.ts";
 import { isAllowedAdmin, parseAllowlist } from "./allowlist.ts";
 import { isAuthorizedBearer } from "./bearer.ts";
+import { describeDatabaseUrl } from "./database-url.ts";
 import {
   buildSignInUrl,
   codeChallengeFor,
@@ -103,6 +104,26 @@ test("allow-list ignores case, spaces and junk entries", () => {
   assert.ok(!isAllowedAdmin("stranger@example.com", list));
   assert.ok(!isAllowedAdmin(undefined, list));
   assert.ok(!isAllowedAdmin("anyone@x.com", parseAllowlist(undefined)));
+});
+
+// --- Database address diagnostics ---------------------------------------------
+
+test("database address diagnostics never print the password", () => {
+  const out = describeDatabaseUrl("postgresql://postgres.abc:SuperSecret123@aws-0.pooler.supabase.com:5432/postgres");
+  assert.ok(!out.includes("SuperSecret123"));
+  assert.match(out, /user "postgres\.abc"/);
+  assert.match(out, /password 14 characters/);
+  assert.match(out, /well formed/);
+});
+
+test("database address diagnostics catch common paste mistakes", () => {
+  const host = "aws-0.pooler.supabase.com";
+  assert.match(describeDatabaseUrl(`postgresql://postgres.abc:[YOUR-PASSWORD]@${host}:5432/postgres`), /placeholder/);
+  assert.match(describeDatabaseUrl(`postgresql://postgres.abc:[pw123]@${host}:5432/postgres`), /square brackets/);
+  assert.match(describeDatabaseUrl(`postgresql://postgres.abc:pw@${host}:6543/postgres`), /6543/);
+  assert.match(describeDatabaseUrl(`postgresql://postgres:pw@${host}:5432/postgres`), /postgres\.<project-ref>/);
+  assert.match(describeDatabaseUrl(`"postgresql://postgres.abc:pw@${host}:5432/postgres"`), /quotes/);
+  assert.match(describeDatabaseUrl("not a url"), /not a valid address/);
 });
 
 // --- Scheduler secret ----------------------------------------------------------

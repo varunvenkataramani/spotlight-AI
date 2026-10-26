@@ -7,6 +7,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 import { readDatabaseUrl } from "../src/lib/config.ts";
+import { describeDatabaseUrl } from "../src/lib/database-url.ts";
 import { sslFor } from "../src/lib/db.ts";
 
 const MIGRATIONS_DIR = path.join(import.meta.dirname, "..", "db", "migrations");
@@ -70,5 +71,11 @@ async function main() {
 
 main().catch((error) => {
   console.error(`Migration failed: ${error instanceof Error ? error.message : error}`);
+  const code = (error as { code?: string }).code;
+  const connectionProblem =
+    code === "28P01" || code === "28000" || code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "XX000";
+  if (connectionProblem && process.env.DATABASE_URL) {
+    console.error(`DATABASE_URL check: ${describeDatabaseUrl(process.env.DATABASE_URL)}`);
+  }
   process.exit(1);
 });
