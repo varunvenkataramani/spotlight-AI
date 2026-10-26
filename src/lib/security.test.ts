@@ -148,7 +148,8 @@ test("database address diagnostics catch common paste mistakes", () => {
   const host = "aws-0.pooler.supabase.com";
   assert.match(describeDatabaseUrl(`postgresql://postgres.abc:[YOUR-PASSWORD]@${host}:5432/postgres`), /placeholder/);
   assert.match(describeDatabaseUrl(`postgresql://postgres.abc:[pw123]@${host}:5432/postgres`), /square brackets/);
-  assert.match(describeDatabaseUrl(`postgresql://postgres.abc:pw@${host}:6543/postgres`), /6543/);
+  assert.doesNotMatch(describeDatabaseUrl(`postgresql://postgres.abc:pw@${host}:6543/postgres`), /Problems found/, "the transaction pooler is fine");
+  assert.match(describeDatabaseUrl(`postgresql://postgres.abc:pw@${host}:5432/postgres`), /transaction pooler \(port 6543\)/);
   assert.match(describeDatabaseUrl(`postgresql://postgres:pw@${host}:5432/postgres`), /postgres\.<project-ref>/);
   assert.match(describeDatabaseUrl(`"postgresql://postgres.abc:pw@${host}:5432/postgres"`), /quotes/);
   assert.match(describeDatabaseUrl("not a url"), /not a valid address/);

@@ -1,6 +1,7 @@
-// Applies db/migrations/*.sql in order, each in its own transaction, exactly once.
-// Safe to run on every deploy: an advisory lock stops two runs overlapping, and a
-// checksum stops an already-applied migration from being silently edited.
+// Applies db/migrations/*.sql in order, exactly once, all inside one transaction: either every
+// new migration lands or none does. Safe to run on every deploy: a transaction-level lock stops
+// two runs overlapping (and works through Supabase's transaction pooler), and a checksum stops
+// an already-applied migration from being silently edited.
 // Usage: DATABASE_URL=... npm run migrate   (Vercel runs it automatically via "vercel-build")
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
@@ -24,7 +25,8 @@ async function main() {
   const client = new pg.Client({ connectionString, ssl: sslFor(connectionString) });
   await client.connect();
   try {
-    await client.query("SELECT pg_advisory_lock($1)", [LOCK_ID]);
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1)", [LOCK_ID]);
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version    text PRIMARY KEY,
       checksum   text NOT NULL,
@@ -50,21 +52,17 @@ async function main() {
         continue;
       }
       process.stdout.write(`Applying ${file} ... `);
-      await client.query("BEGIN");
-      try {
-        await client.query(sql);
-        await client.query("INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)", [file, checksum]);
-        await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      }
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)", [file, checksum]);
       console.log("done");
       ran += 1;
     }
+    await client.query("COMMIT");
     console.log(ran === 0 ? "Database is up to date." : `Applied ${ran} migration(s).`);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
   } finally {
-    await client.query("SELECT pg_advisory_unlock($1)", [LOCK_ID]).catch(() => {});
     await client.end();
   }
 }
@@ -73,7 +71,8 @@ main().catch((error) => {
   console.error(`Migration failed: ${error instanceof Error ? error.message : error}`);
   const code = (error as { code?: string }).code;
   const connectionProblem =
-    code === "28P01" || code === "28000" || code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "XX000";
+    code === "28P01" || code === "28000" || code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "XX000" ||
+    /EMAXCONN|max clients/i.test(String((error as Error)?.message));
   if (connectionProblem && process.env.DATABASE_URL) {
     console.error(`DATABASE_URL check: ${describeDatabaseUrl(process.env.DATABASE_URL)}`);
   }

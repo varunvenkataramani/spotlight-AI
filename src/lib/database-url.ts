@@ -26,7 +26,6 @@ export function describeDatabaseUrl(raw: string): string {
   if (password.includes("YOUR-PASSWORD")) problems.push("the [YOUR-PASSWORD] placeholder is still there");
   else if (/^\[.*\]$/.test(password)) problems.push("the password is still inside square brackets; remove the [ and ]");
   if (/\s/.test(password)) problems.push("the password contains a space");
-  if (port === "6543") problems.push("port 6543 is the transaction pooler; use the session pooler on port 5432");
   if (url.hostname.endsWith("pooler.supabase.com") && !url.username.includes(".")) {
     problems.push('for the Supabase pooler the user must look like "postgres.<project-ref>"');
   }
@@ -34,7 +33,11 @@ export function describeDatabaseUrl(raw: string): string {
   const summary =
     `user "${url.username}", host "${url.hostname}", port ${port}, ` +
     `database "${url.pathname.replace(/^\//, "") || "(none)"}", password ${password.length} characters`;
+  const advice =
+    url.hostname.endsWith("pooler.supabase.com") && port === "5432"
+      ? " Note: this is the session pooler, which allows only a few connections; on Vercel use the transaction pooler (port 6543)."
+      : "";
   return problems.length > 0
-    ? `${summary}. Problems found: ${problems.join("; ")}.`
-    : `${summary}. The address is well formed, so the password itself doesn't match the database's current password.`;
+    ? `${summary}. Problems found: ${problems.join("; ")}.${advice}`
+    : `${summary}. The address is well formed, so the password itself doesn't match the database's current password.${advice}`;
 }
