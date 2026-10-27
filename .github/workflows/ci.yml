@@ -85,6 +85,10 @@ jobs:
         timeout-minutes: 6
         run: bash scripts/test/alerts-e2e.sh
 
+      - name: Claude connector end to end
+        timeout-minutes: 5
+        run: bash scripts/test/connector-e2e.sh
+
       - name: Through a transaction pooler (like Supabase's)
         timeout-minutes: 5
         run: |

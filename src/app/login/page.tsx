@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ConfigError } from "@/lib/config.ts";
+import { safeNextPath } from "@/lib/oauth/oauth.ts";
 import { getCurrentAdmin } from "@/server/session.ts";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -20,9 +21,10 @@ const MESSAGES: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; signed_out?: string }>;
+  searchParams: Promise<{ error?: string; signed_out?: string; next?: string }>;
 }) {
   const params = await searchParams;
+  const next = safeNextPath(params.next);
   let alreadySignedIn = false;
   let configProblem: string | null = null;
   try {
@@ -30,7 +32,7 @@ export default async function LoginPage({
   } catch (e) {
     if (e instanceof ConfigError) configProblem = e.message;
   }
-  if (alreadySignedIn) redirect("/");
+  if (alreadySignedIn) redirect(next ?? "/");
 
   const error = configProblem
     ? `Sign-in isn't set up yet. ${configProblem}`
@@ -58,13 +60,15 @@ export default async function LoginPage({
         )}
 
         <a
-          href="/api/auth/login"
+          href={next ? `/api/auth/login?next=${encodeURIComponent(next)}` : "/api/auth/login"}
           className="mt-10 inline-flex items-center gap-3 rounded-full bg-gel px-6 py-3 font-semibold text-ink transition-colors hover:bg-[#f6c460]"
         >
           <GoogleMark />
           Continue with Google
         </a>
-        <p className="mt-4 text-sm text-paper/55">Only the two admin accounts can sign in.</p>
+        <p className="mt-4 text-sm text-paper/55">
+          {next?.startsWith("/oauth/authorize") ? "Sign in to connect Claude to Spotlight. Only the two admin accounts can." : "Only the two admin accounts can sign in."}
+        </p>
       </div>
     </main>
   );

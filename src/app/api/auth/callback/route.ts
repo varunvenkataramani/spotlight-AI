@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { readWebConfig } from "@/lib/config.ts";
 import { isAllowedAdmin } from "@/lib/allowlist.ts";
 import { exchangeCodeForIdentity, SignInError, type OAuthStart } from "@/lib/google-oidc.ts";
+import { safeNextPath } from "@/lib/oauth/oauth.ts";
 import { readSignedValue } from "@/lib/signed-value.ts";
 import { OAUTH_COOKIE, OAUTH_COOKIE_PATH } from "@/server/oauth-cookie.ts";
 import { createSessionToken, sessionCookieName, sessionCookieOptions } from "@/server/session.ts";
@@ -52,7 +53,8 @@ export async function GET(request: NextRequest) {
     if (!isAllowedAdmin(identity.email, config.admins)) return fail("not_allowed");
 
     const userId = await recordAdminLogin(identity);
-    const response = NextResponse.redirect(new URL("/", config.appUrl));
+    // Back to where sign-in started (for example "Allow Claude"), or the overview.
+    const response = NextResponse.redirect(new URL(safeNextPath(start.next) ?? "/", config.appUrl));
     response.cookies.set(
       sessionCookieName(config.isProduction),
       createSessionToken({ userId, email: identity.email, name: identity.name }, config.sessionSecret),

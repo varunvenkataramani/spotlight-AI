@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { ConfigError, readWebConfig } from "@/lib/config.ts";
 import { buildSignInUrl, createOAuthStart } from "@/lib/google-oidc.ts";
+import { safeNextPath } from "@/lib/oauth/oauth.ts";
 import { createSignedValue } from "@/lib/signed-value.ts";
 import { OAUTH_COOKIE, OAUTH_COOKIE_PATH, OAUTH_TTL_SECONDS } from "@/server/oauth-cookie.ts";
 
@@ -16,7 +17,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(`/login?error=${reason}`, request.url));
   }
 
-  const start = createOAuthStart();
+  const next = safeNextPath(new URL(request.url).searchParams.get("next"));
+  const start = { ...createOAuthStart(), ...(next ? { next } : {}) };
   const response = NextResponse.redirect(
     buildSignInUrl({
       clientId: config.googleClientId,

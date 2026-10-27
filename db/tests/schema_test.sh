@@ -88,5 +88,20 @@ check "removing an admin removes their reminders" "delete from users where id='$
 check "a Telegram update is handled once" "insert into telegram_updates(update_id) values (77),(77)" error
 check "the actress choice starts empty" "select 1/(count(*))::int from preferences where key='talent_email' and value='null'::jsonb" ok
 
+# Claude connector (0006)
+C1=00000000-0000-0000-0000-0000000000c1
+G1=00000000-0000-0000-0000-0000000000c2
+$P -c "insert into oauth_clients(id,client_id,redirect_uris) values ('$C1','spc_1','{https://claude.ai/api/mcp/auth_callback}');
+       insert into oauth_grants(id,client_id,user_id,resource) values ('$G1','$C1','$U3','https://x/api/mcp')" > /dev/null
+check "a public app can't have a secret" "insert into oauth_clients(client_id,client_secret_hash,redirect_uris) values ('spc_2','h','{https://claude.ai/api/mcp/auth_callback}')" error
+check "an app with a secret must say how it's sent" "insert into oauth_clients(client_id,redirect_uris,token_auth_method) values ('spc_3','{https://claude.ai/api/mcp/auth_callback}','client_secret_post')" error
+check "an app needs a callback address" "insert into oauth_clients(client_id,redirect_uris) values ('spc_4','{}')" error
+check "app ids are unique" "insert into oauth_clients(client_id,redirect_uris) values ('spc_1','{https://claude.ai/api/mcp/auth_callback}')" error
+check "codes need a proper PKCE challenge" "insert into oauth_codes(code_hash,grant_id,redirect_uri,code_challenge,expires_at) values ('h1','$G1','https://claude.ai/api/mcp/auth_callback','plain-text',now())" error
+check "a proper code is accepted" "insert into oauth_codes(code_hash,grant_id,redirect_uri,code_challenge,expires_at) values ('h2','$G1','https://claude.ai/api/mcp/auth_callback',repeat('a',43),now())" ok
+check "tokens are access or refresh only" "insert into oauth_tokens(token_hash,grant_id,kind,expires_at) values ('t1','$G1','id',now())" error
+check "a token is accepted" "insert into oauth_tokens(token_hash,grant_id,kind,expires_at) values ('t2','$G1','access',now())" ok
+check "removing an admin removes their Claude connections and tokens" "delete from users where id='$U3'; select 1/(1-count(*))::int from oauth_tokens; select 1/(1-count(*))::int from oauth_codes; select 1/(1-count(*))::int from oauth_grants" ok
+
 echo
 [ "$fails" -eq 0 ] && echo "All schema checks passed." || { echo "$fails schema check(s) failed."; exit 1; }
