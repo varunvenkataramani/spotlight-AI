@@ -13,7 +13,7 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 - **Gmail** is checked every minute in that same run, through Gmail's change history (no Pub/Sub needed).
 - **Database migrations** run automatically on every production deploy (`vercel-build`).
 
-## What works today (Milestones 1 to 6)
+## What works today (all milestones)
 
 - Google sign-in for exactly two admins (allow-list), with PKCE, signed httpOnly cookies, and a re-check on every request.
 - The complete database schema, with safety rules enforced by Postgres itself: one row per Gmail message, an append-only activity log, drafts that can't be marked sent without a recorded approval, and de-duplicated alerts.
@@ -32,7 +32,7 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 
 - **Claude connector**: add Spotlight to the Claude app (Settings → Connectors → Add custom connector, address shown in Spotlight's Settings) and ask about offers from your phone: today's briefing, finding offers, full details with their source words, and on request notes, status, reminders, snoozing, flagging for her and recording her answer. Claude signs in through Spotlight's own "Allow" page; it can't send email or accept, confirm or decline anything. Disconnect any time in Settings.
 
-Not built yet: reply drafts (5b, needs the Claude API key).
+- **Reply drafts**: on any offer, choose what the reply should do (show interest, answer about dates, ask the budget, share her portfolio, negotiate, ask questions, decline, follow up) and a tone, and add points to include. Claude drafts it from the offer and the email thread, never inventing facts: gaps become [placeholders] that must be filled before it can go out, and amounts that aren't in their emails or your instructions are flagged. Edit it, then save it to Gmail as a draft in the same conversation, or send it from Spotlight after ticking a confirmation. Needs "Allow replies" in Settings → Inbox (one Google consent). Signature and facts about her are set in Settings → Reply drafts.
 
 ## Project layout
 
@@ -52,7 +52,7 @@ Not built yet: reply drafts (5b, needs the Claude API key).
 
 1. In [Google Cloud Console](https://console.cloud.google.com), create a project.
 2. Open **Google Auth Platform** (search for it in the top bar). Set it up as **External**, leave it in **Testing**, and under **Audience > Test users** add both admin Google accounts and the Gmail being connected.
-3. Enable the **Gmail API**. Under **Data Access**, add the scope `.../auth/gmail.readonly`.
+3. Enable the **Gmail API**. Under **Data Access**, add the scopes `.../auth/gmail.readonly` and, for reply drafts, `.../auth/gmail.compose`.
 4. After the first Vercel deploy (step 3), open **Google Auth Platform > Clients > Create client**, type **Web application**, with two authorised redirect URIs: `https://YOUR-APP.vercel.app/api/auth/callback` (sign-in) and `https://YOUR-APP.vercel.app/api/gmail/callback` (connecting Gmail). Copy the client ID and secret into Vercel.
 
 ### 2. Database (Supabase)
@@ -125,6 +125,7 @@ bash scripts/test/ai-e2e.sh     # after npm run build: AI sorting against a fake
 bash scripts/test/dashboard-e2e.sh  # after npm run build: every dashboard action, filters, guards
 bash scripts/test/alerts-e2e.sh     # after npm run build: alerts against a fake Telegram and a fake phone push service (needs jq)
 bash scripts/test/connector-e2e.sh  # after npm run build: the Claude connector, playing Claude's part (needs jq, openssl)
+bash scripts/test/drafts-e2e.sh     # after npm run build: reply drafts against a fake Claude and a fake Gmail (needs jq)
 ```
 
 All of these run on every push in GitHub Actions.

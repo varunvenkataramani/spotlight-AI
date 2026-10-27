@@ -85,6 +85,10 @@ jobs:
         timeout-minutes: 6
         run: bash scripts/test/alerts-e2e.sh
 
+      - name: Reply drafts end to end (fake Claude and Gmail)
+        timeout-minutes: 6
+        run: bash scripts/test/drafts-e2e.sh
+
       - name: Claude connector end to end
         timeout-minutes: 5
         run: bash scripts/test/connector-e2e.sh

@@ -144,6 +144,29 @@ function answer(kase, step, received) {
   }
 }
 
+// Reply drafts: markers in the team's instructions choose the behaviour.
+function draftReply(res, system, user) {
+  if (user.includes("[draft:busy]")) return send(res, 529, { type: "error", error: { type: "overloaded_error" } });
+  const signature = system.match(/Signature to end with:\n([\s\S]*?)\n\nFacts about her/)?.[1] ?? "[signature]";
+  const clean = user.includes("no gaps");
+  const text = JSON.stringify({
+    subject: "Re: Paid reel collaboration",
+    body: clean
+      ? `Hi Priya,\n\nThank you for thinking of her. Her fee for the reel and stories is ₹1.2 lakh, and she is free on 3 Nov.\n\n${signature}`
+      : `Hi Priya,\n\nThank you for reaching out. She would love to do this. Her fee is ₹1,20,000 and she is free on [her available dates].\n\n${signature}`,
+    missing: clean ? [] : ["[her available dates]"],
+    notes: clean ? "" : "Check her dates before sending.",
+  });
+  return send(res, 200, {
+    id: "msg_fake_draft",
+    type: "message",
+    role: "assistant",
+    content: [{ type: "text", text }],
+    stop_reason: "end_turn",
+    usage: { input_tokens: Math.ceil(user.length / 4), output_tokens: Math.ceil(text.length / 4) },
+  });
+}
+
 function send(res, status, body) {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
@@ -162,9 +185,11 @@ const server = http.createServer(async (req, res) => {
     }
     const body = JSON.parse(raw);
     const schemaProps = body.output_config?.format?.schema?.properties ?? {};
-    const step = "classification" in schemaProps ? "triage" : "extract";
+    const step = "classification" in schemaProps ? "triage" : "body" in schemaProps ? "draft" : "extract";
     const user = body.messages?.[0]?.content ?? "";
     requests.push({ step, model: body.model, system: body.system, user, hasTools: "tools" in body, hasOutputConfig: Boolean(body.output_config) });
+
+    if (step === "draft") return draftReply(res, body.system ?? "", user);
 
     const kase = user.match(/\[case:([a-z]+)\]/)?.[1] ?? "unknown";
     const receivedDay = user.match(/Received: .*\((\d{4}-\d{2}-\d{2})\)/)?.[1];

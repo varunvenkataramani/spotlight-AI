@@ -34,7 +34,7 @@ check "email addresses must be lowercase" "insert into users(email) values ('B@X
 check "activity log cannot be edited" "update activities set kind='x'" error
 check "activity log cannot be deleted" "delete from activities" error
 check "draft cannot be sent without approval" "insert into drafts(opportunity_id,mode,status,sent_at) values ('$O','decline','sent',now())" error
-check "draft sent with approval is accepted" "insert into drafts(opportunity_id,mode,status,sent_at,approved_by,approved_by_email,approved_at) values ('$O','decline','sent',now(),'$U','a@x.com',now())" ok
+check "draft sent with approval is accepted" "insert into drafts(opportunity_id,mode,status,sent_at,approved_by,approved_by_email,approved_at,gmail_sent_message_id,to_email) values ('$O','decline','sent',now(),'$U','a@x.com',now(),'m0','p@x.com')" ok
 check "budget max below min is rejected" "update opportunities set amount_min=50000, amount_max=10000" error
 check "unknown status is rejected" "update opportunities set status='maybe'" error
 check "verified field needs a source quote" "insert into extracted_fields(opportunity_id,field_name,value_text,is_verified) values ('$O','budget','75000',true)" error
@@ -102,6 +102,17 @@ check "a proper code is accepted" "insert into oauth_codes(code_hash,grant_id,re
 check "tokens are access or refresh only" "insert into oauth_tokens(token_hash,grant_id,kind,expires_at) values ('t1','$G1','id',now())" error
 check "a token is accepted" "insert into oauth_tokens(token_hash,grant_id,kind,expires_at) values ('t2','$G1','access',now())" ok
 check "removing an admin removes their Claude connections and tokens" "delete from users where id='$U3'; select 1/(1-count(*))::int from oauth_tokens; select 1/(1-count(*))::int from oauth_codes; select 1/(1-count(*))::int from oauth_grants" ok
+
+# Reply drafts (0008)
+OD=00000000-0000-0000-0000-0000000000d8
+$P -c "insert into opportunities(id,gmail_account_id,title) values ('$OD','$NEWACC','draft target')" > /dev/null
+check "a draft needs a valid recipient address" "insert into drafts(opportunity_id,mode,to_email) values ('$OD','decline','Priya <p@x.com>')" error
+check "recipient addresses are stored lowercase" "insert into drafts(opportunity_id,mode,to_email) values ('$OD','decline','P@X.com')" error
+check "a draft saved to Gmail records Gmail's id" "insert into drafts(opportunity_id,mode,status) values ('$OD','decline','saved_to_gmail')" error
+check "a sent draft records Gmail's message id and recipient" "insert into drafts(opportunity_id,mode,status,sent_at,approved_by_email,approved_at) values ('$OD','decline','sent',now(),'a@x.com',now())" error
+check "a complete sent draft is accepted" "insert into drafts(opportunity_id,mode,status,sent_at,approved_by_email,approved_at,gmail_sent_message_id,to_email) values ('$OD','decline','sent',now(),'a@x.com',now(),'m1','p@x.com')" ok
+check "AI usage records drafting" "insert into ai_usage(step,model,ok,opportunity_id) values ('draft','claude-sonnet-5-5',true,'$OD')" ok
+check "reply settings start empty" "select 1/(count(*))::int from preferences where key in ('reply_signature','reply_facts') and value = '\"\"'::jsonb having count(*) = 2" ok
 
 echo
 [ "$fails" -eq 0 ] && echo "All schema checks passed." || { echo "$fails schema check(s) failed."; exit 1; }

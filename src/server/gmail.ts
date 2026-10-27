@@ -1,4 +1,5 @@
 // Connecting, reconnecting and disconnecting the inbox, and its status for the screens.
+import { canCompose } from "@/lib/gmail/compose.ts";
 import { query } from "@/lib/db.ts";
 import { MAX_FETCH_ATTEMPTS } from "@/lib/gmail/sync.ts";
 import { encryptSecret } from "@/lib/token-crypto.ts";
@@ -93,6 +94,8 @@ export type InboxStatus = {
   storedNew: number;
   waiting: number;
   stuck: number;
+  /** Allowed to save drafts and send replies (gmail.compose). */
+  canReply: boolean;
 };
 
 export async function getInboxStatus(): Promise<InboxStatus | null> {
@@ -100,6 +103,7 @@ export async function getInboxStatus(): Promise<InboxStatus | null> {
     id: string;
     email: string;
     status: InboxStatus["status"];
+    scopes: string[];
     connected_at: Date;
     last_synced_at: Date | null;
     last_error: string | null;
@@ -112,7 +116,7 @@ export async function getInboxStatus(): Promise<InboxStatus | null> {
     waiting: string;
     stuck: string;
   }>(
-    `SELECT a.id, a.email, a.status, a.connected_at, a.last_synced_at, a.last_error, a.consecutive_failures,
+    `SELECT a.id, a.email, a.status, a.scopes, a.connected_at, a.last_synced_at, a.last_error, a.consecutive_failures,
             a.scan_days, a.scan_listed, a.initial_scan_completed_at,
             (SELECT count(*) FROM emails e WHERE e.gmail_account_id = a.id) AS stored_total,
             (SELECT count(*) FROM emails e WHERE e.gmail_account_id = a.id AND e.is_historical) AS stored_earlier,
@@ -140,6 +144,7 @@ export async function getInboxStatus(): Promise<InboxStatus | null> {
     storedNew: storedTotal - storedEarlier,
     waiting: Number(r.waiting),
     stuck: Number(r.stuck),
+    canReply: canCompose(r.scopes),
   };
 }
 

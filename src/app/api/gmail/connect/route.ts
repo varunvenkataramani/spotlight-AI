@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       state: start.state,
       codeVerifier: start.codeVerifier,
       loginHint: request.nextUrl.searchParams.get("hint") ?? undefined,
+      allowSend: request.nextUrl.searchParams.get("send") === "1",
       endpoints: googleEndpoints(),
     }),
   );
