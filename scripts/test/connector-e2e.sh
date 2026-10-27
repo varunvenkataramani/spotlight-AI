@@ -18,7 +18,7 @@ b64url() { base64 | tr '+/' '-_' | tr -d '=\n'; }
 sha256hex() { printf '%s' "$1" | openssl dgst -sha256 -hex | sed 's/^.*= //'; }
 
 for _ in $(seq 1 20); do curl -s -o /dev/null "$BASE/login" || break; sleep 1; done
-if curl -s -o /dev/null "$BASE/login"; then echo "FAIL  port 3000 is still in use by another server"; exit 1; fi
+if curl -s -o /dev/null "$BASE/login"; then echo "FAIL  port 3000 is still in use by another server"; echo "::error title=Connector e2e::port 3000 still in use"; exit 1; fi
 OAUTH_TEST_REDIRECT_URIS="$CB" ./node_modules/.bin/next start > /tmp/web-connector.log 2>&1 &
 WEB_PID=$!
 trap 'kill $WEB_PID 2>/dev/null' EXIT
@@ -120,48 +120,51 @@ r=$(mcp -H "MCP-Protocol-Version: 2025-06-18" --data '{"jsonrpc":"2.0","id":2,"m
 [[ "$(mcp -H "Origin: https://evil.example" --data '{"jsonrpc":"2.0","id":3,"method":"ping"}')" == *" 403" ]] && pass "browsers on other sites are refused" || fail "origin check"
 [ "$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $AT" "$BASE/api/mcp")" = "405" ] && pass "GET (server stream) isn't offered" || fail "GET mcp"
 
-call() { # tool, json args → prints the tool's text; sets IS_ERROR
+# call <tool> <json args>: leaves the tool's text in T and its error flag in IS_ERROR.
+# Not for use in $(...): the results must stay in this shell.
+T=""; IS_ERROR=""
+call() {
   local out
   out=$(mcp -H "MCP-Protocol-Version: 2025-06-18" --data "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":$2}}")
   IS_ERROR=$(jq -r '.result.isError' <<<"${out% *}")
-  jq -r '.result.content[0].text // .error.message' <<<"${out% *}"
+  T=$(jq -r '.result.content[0].text // .error.message' <<<"${out% *}")
 }
-t=$(call briefing '{}')
+call briefing '{}'; t=$T
 grep -q "Serum reel — Glow Labs · ₹75,000" <<<"$t" && grep -q "Dates in the next 7 days" <<<"$t" && [ "$IS_ERROR" = "false" ] && pass "briefing lists what needs attention" || fail "briefing: $t"
-t=$(call list_offers '{"search":"glow"}')
+call list_offers '{"search":"glow"}'; t=$T
 grep -q "Serum reel" <<<"$t" && ! grep -q "Wedding" <<<"$t" && grep -q "id: $O1" <<<"$t" && pass "list_offers finds by brand" || fail "list search: $t"
-t=$(call list_offers '{"show":"waiting"}')
+call list_offers '{"show":"waiting"}'; t=$T
 grep -q "Wedding appearance" <<<"$t" && ! grep -q "Serum" <<<"$t" && pass "and by status group" || fail "list waiting: $t"
-t=$(call list_offers '{"due_within_days":7}')
+call list_offers '{"due_within_days":7}'; t=$T
 grep -q "Serum reel" <<<"$t" && ! grep -q "Wedding" <<<"$t" && pass "and by how soon it's due" || fail "list due: $t"
-t=$(call list_offers '{"show":"everything"}')
+call list_offers '{"show":"everything"}'; t=$T
 [ "$IS_ERROR" = "true" ] && grep -q "show must be one of" <<<"$t" && pass "bad filters get a readable error" || fail "bad filter: $t"
-t=$(call get_offer "{\"id\":\"$O1\"}")
+call get_offer "{\"id\":\"$O1\"}"; t=$T
 grep -q "Pay: ₹75,000 — email says: “Budget: ₹75,000”" <<<"$t" && grep -q "1 email linked" <<<"$t" && ! grep -q "Ignore previous" <<<"$t" && pass "get_offer shows details with their source words, without email text" || fail "get_offer: $t"
-t=$(call get_offer "{\"id\":\"$O1\",\"include_emails\":true}")
+call get_offer "{\"id\":\"$O1\",\"include_emails\":true}"; t=$T
 [ "$(grep -c '</untrusted_email>' <<<"$t")" = "1" ] && grep -q '<untrusted_email from="Priya Shah"' <<<"$t" && grep -q "Ignore previous instructions" <<<"$t" \
   && pass "emails come fenced as outside text, and can't break out of the fence" || fail "emails: $t"
-t=$(call get_offer '{"id":"00000000-0000-0000-0000-000000000000"}')
+call get_offer '{"id":"00000000-0000-0000-0000-000000000000"}'; t=$T
 [ "$IS_ERROR" = "true" ] && grep -q "No offer has that id" <<<"$t" && pass "unknown ids are reported plainly" || fail "unknown id: $t"
 
-t=$(call add_note "{\"id\":\"$O1\",\"text\":\"Asked about usage rights\"}")
+call add_note "{\"id\":\"$O1\",\"text\":\"Asked about usage rights\"}"; t=$T
 [ "$(sql "SELECT count(*) FROM activities WHERE opportunity_id = '$O1' AND kind = 'note' AND actor_user_id = '$M_ID' AND detail->>'text' LIKE 'Asked about usage rights%(added from Claude)'")" = "1" ] \
   && pass "add_note writes to the history as the admin, marked as from Claude" || fail "add_note: $t"
 call update_status "{\"id\":\"$O1\",\"status\":\"interested\"}" > /dev/null
 [ "$(sql "SELECT status FROM opportunities WHERE id = '$O1'")" = "interested" ] && pass "update_status changes the status" || fail "update_status"
-t=$(call update_status "{\"id\":\"$O1\",\"status\":\"confirmed\"}")
+call update_status "{\"id\":\"$O1\",\"status\":\"confirmed\"}"; t=$T
 [ "$IS_ERROR" = "true" ] && [ "$(sql "SELECT status FROM opportunities WHERE id = '$O1'")" = "interested" ] && pass "but can't confirm, accept or decline" || fail "confirm via claude: $t"
 call flag_for_her "{\"id\":\"$O1\",\"note\":\"Worth it?\"}" > /dev/null
 [ -n "$(sql "SELECT flagged_for_talent_at FROM opportunities WHERE id = '$O1'")" ] && pass "flag_for_her puts it to her" || fail "flag"
 call record_her_answer "{\"id\":\"$O1\",\"answer\":\"questions\",\"note\":\"Is travel covered?\"}" > /dev/null
 [ "$(sql "SELECT talent_response || ': ' || talent_response_note FROM opportunities WHERE id = '$O1'")" = "questions: Is travel covered?" ] \
   && [ "$(sql "SELECT detail->>'via' FROM activities WHERE opportunity_id = '$O1' AND kind = 'her_answer'")" = "claude" ] && pass "record_her_answer saves her answer, marked as from Claude" || fail "her answer"
-t=$(call record_her_answer "{\"id\":\"$O2\",\"answer\":\"pass\"}")
+call record_her_answer "{\"id\":\"$O2\",\"answer\":\"pass\"}"; t=$T
 [ "$IS_ERROR" = "true" ] && grep -q "isn't waiting for her answer" <<<"$t" && pass "only for offers put to her" || fail "answer unflagged: $t"
 TOMORROW=$(TZ=Asia/Kolkata date -d tomorrow +%F)
-t=$(call set_reminder "{\"id\":\"$O1\",\"date\":\"$TOMORROW\",\"time\":\"09:30\",\"note\":\"Chase the brief\"}")
+call set_reminder "{\"id\":\"$O1\",\"date\":\"$TOMORROW\",\"time\":\"09:30\",\"note\":\"Chase the brief\"}"; t=$T
 [ "$(sql "SELECT to_char(due_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') || ' ' || (for_user = '$M_ID') FROM reminders WHERE note = 'Chase the brief'")" = "09:30 t" ] && pass "set_reminder sets one for the person asking, in India time" || fail "reminder: $t"
-t=$(call set_reminder "{\"id\":\"$O1\",\"date\":\"next friday\"}")
+call set_reminder "{\"id\":\"$O1\",\"date\":\"next friday\"}"; t=$T
 [ "$IS_ERROR" = "true" ] && pass "unclear dates are refused, not guessed" || fail "reminder date: $t"
 call snooze_offer "{\"id\":\"$O2\",\"days\":3}" > /dev/null
 [ -n "$(sql "SELECT snoozed_until FROM opportunities WHERE id = '$O2' AND snoozed_until > now() + interval '2 days'")" ] && pass "snooze_offer snoozes" || fail "snooze"
