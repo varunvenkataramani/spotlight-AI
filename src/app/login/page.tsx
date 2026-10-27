@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { ConfigError } from "@/lib/config.ts";
+import { ConfigError, isDemoMode } from "@/lib/config.ts";
 import { safeNextPath } from "@/lib/oauth/oauth.ts";
 import { getCurrentAdmin } from "@/server/session.ts";
 
@@ -15,6 +15,7 @@ const MESSAGES: Record<string, string> = {
   token_exchange_failed: "Google didn't complete the sign-in. Try again; if it repeats, check the OAuth client settings.",
   invalid_id_token: "Google's response couldn't be verified. Try again; if it repeats, check GOOGLE_CLIENT_ID.",
   config: "Sign-in isn't set up yet: some settings are missing. Add them in Vercel under Environment Variables, then redeploy.",
+  demo: "The demo couldn't open just now. Try again in a minute.",
   unknown: "Sign-in failed for an unexpected reason. Try again in a minute.",
 };
 
@@ -33,6 +34,7 @@ export default async function LoginPage({
     if (e instanceof ConfigError) configProblem = e.message;
   }
   if (alreadySignedIn) redirect(next ?? "/");
+  const demo = isDemoMode() && !configProblem;
 
   const error = configProblem
     ? `Sign-in isn't set up yet. ${configProblem}`
@@ -59,18 +61,44 @@ export default async function LoginPage({
           </p>
         )}
 
-        <a
-          href={next ? `/api/auth/login?next=${encodeURIComponent(next)}` : "/api/auth/login"}
-          className="mt-10 inline-flex items-center gap-3 rounded-full bg-gel px-6 py-3 font-semibold text-stage transition-colors hover:bg-[#f6c460]"
-        >
-          <GoogleMark />
-          Continue with Google
-        </a>
-        <p className="mt-4 text-sm text-ink/55">
-          {next?.startsWith("/oauth/authorize") ? "Sign in to connect Claude to Spotlight. Only the two admin accounts can." : "Only the two admin accounts can sign in."}
-        </p>
+        {demo ? (
+          <DemoDoor />
+        ) : (
+          <>
+            <a
+              href={next ? `/api/auth/login?next=${encodeURIComponent(next)}` : "/api/auth/login"}
+              className="mt-10 inline-flex items-center gap-3 rounded-full bg-gel px-6 py-3 font-semibold text-stage transition-colors hover:bg-[#f6c460]"
+            >
+              <GoogleMark />
+              Continue with Google
+            </a>
+            <p className="mt-4 text-sm text-ink/55">
+              {next?.startsWith("/oauth/authorize") ? "Sign in to connect Claude to Spotlight. Only the two admin accounts can." : "Only the two admin accounts can sign in."}
+            </p>
+          </>
+        )}
       </div>
     </main>
+  );
+}
+
+/** The demo has no Google sign-in: visitors pick whose view to see. */
+function DemoDoor() {
+  return (
+    <div className="mt-10">
+      <p className="text-sm font-semibold uppercase tracking-[0.12em] text-gel">Live demo</p>
+      <p className="mt-2 max-w-md leading-relaxed text-ink/75">
+        A working copy with made-up offers. Click anything, change anything: it resets every few hours, and nothing here sends email.
+      </p>
+      <form method="post" action="/api/demo/enter" className="mt-6 flex flex-wrap gap-3">
+        <button name="as" value="manager" className="inline-flex min-h-12 items-center rounded-full bg-gel px-6 font-semibold text-stage transition-colors hover:bg-[#f6c460]">
+          Enter as Kabir, her manager
+        </button>
+        <button name="as" value="talent" className="inline-flex min-h-12 items-center rounded-full border border-ink/40 px-6 font-semibold hover:border-ink">
+          Enter as Tara, the actress
+        </button>
+      </form>
+    </div>
   );
 }
 

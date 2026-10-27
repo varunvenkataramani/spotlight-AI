@@ -6,6 +6,7 @@ import { getProfile } from "@/lib/gmail/api.ts";
 import { exchangeGmailCode, GmailConnectError, googleEndpoints } from "@/lib/gmail/google.ts";
 import { SignInError } from "@/lib/google-oidc.ts";
 import { readSignedValue } from "@/lib/signed-value.ts";
+import { DEMO_BLOCKED, isDemoMode } from "@/server/demo.ts";
 import { saveConnectedInbox } from "@/server/gmail.ts";
 import { GMAIL_COOKIE, GMAIL_COOKIE_PATH, type GmailConnectState } from "@/server/gmail-cookie.ts";
 import { requireAdmin } from "@/server/session.ts";
@@ -20,6 +21,7 @@ function sameString(a: string, b: string): boolean {
 
 export async function GET(request: NextRequest) {
   const admin = await requireAdmin();
+  if (isDemoMode()) return NextResponse.redirect(new URL(`/settings?error=${encodeURIComponent(DEMO_BLOCKED)}`, request.url));
   const finish = (outcome: string) => {
     const response = NextResponse.redirect(new URL(`/settings?gmail=${outcome}`, request.url));
     response.cookies.set(GMAIL_COOKIE, "", { path: GMAIL_COOKIE_PATH, maxAge: 0 });

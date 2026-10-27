@@ -2,6 +2,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { EditError } from "@/lib/edits.ts";
 import { removePushSubscription, savePushSubscription } from "@/server/alerts.ts";
+import { isDemoMode } from "@/server/demo.ts";
 import { isCrossSite } from "@/server/request-guard.ts";
 import { requireAdmin } from "@/server/session.ts";
 
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin();
   if (isCrossSite(request)) return NextResponse.json({ error: "cross_site" }, { status: 403 });
+  if (isDemoMode()) return NextResponse.json({ error: "Phone notifications aren't available in the demo." }, { status: 400 });
   if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
     return NextResponse.json({ error: "Send JSON." }, { status: 415 });
   }

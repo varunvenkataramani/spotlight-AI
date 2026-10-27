@@ -1,6 +1,6 @@
 // Starts "Sign in with Google": remembers state + PKCE verifier in a short-lived signed cookie.
 import { NextResponse } from "next/server";
-import { ConfigError, readWebConfig } from "@/lib/config.ts";
+import { ConfigError, isDemoMode, readWebConfig } from "@/lib/config.ts";
 import { buildSignInUrl, createOAuthStart } from "@/lib/google-oidc.ts";
 import { safeNextPath } from "@/lib/oauth/oauth.ts";
 import { createSignedValue } from "@/lib/signed-value.ts";
@@ -9,6 +9,8 @@ import { OAUTH_COOKIE, OAUTH_COOKIE_PATH, OAUTH_TTL_SECONDS } from "@/server/oau
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  // The demo has no Google sign-in: its login page offers the two made-up admins instead.
+  if (isDemoMode()) return NextResponse.redirect(new URL("/login", request.url));
   let config;
   try {
     config = readWebConfig();

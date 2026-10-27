@@ -14,6 +14,7 @@ import {
   snooze,
   withdrawFlag,
 } from "@/server/actions.ts";
+import { DEMO_BLOCKED, isDemoMode } from "@/server/demo.ts";
 import { createReplyDraft, discardDraft, saveDraftEdits, saveToGmail, sendDraft } from "@/server/drafts.ts";
 import { backWith, safeBackPath } from "@/server/form-redirect.ts";
 import { isCrossSite, isUuid } from "@/server/request-guard.ts";
@@ -36,6 +37,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     form = new FormData();
   }
   const back = safeBackPath(form.get("back"), `/opportunities/${id}`);
+  // The demo never calls Claude or Gmail: its sample drafts can be edited, not written, saved or sent.
+  if (isDemoMode() && ["draft", "draft_gmail", "draft_send"].includes(String(form.get("action")))) {
+    return backWith(request, `/opportunities/${id}#reply`, "error", DEMO_BLOCKED);
+  }
 
   try {
     switch (form.get("action")) {

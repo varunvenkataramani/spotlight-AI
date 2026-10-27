@@ -1,5 +1,6 @@
 // Token endpoint: one-time codes and refresh tokens become fresh access tokens for the connector.
 import { NextResponse, type NextRequest } from "next/server";
+import { demoNotFound } from "@/server/demo.ts";
 import { readWebConfig } from "@/lib/config.ts";
 import { OAuthError } from "@/lib/oauth/oauth.ts";
 import { exchangeToken } from "@/server/oauth.ts";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 const HEADERS = { "Cache-Control": "no-store", Pragma: "no-cache", "Access-Control-Allow-Origin": "*" };
 
 export async function POST(request: NextRequest) {
+  const blocked = demoNotFound();
+  if (blocked) return blocked;
   try {
     if (!(request.headers.get("content-type") ?? "").includes("application/x-www-form-urlencoded")) {
       throw new OAuthError("invalid_request", "Send the token request as application/x-www-form-urlencoded.");

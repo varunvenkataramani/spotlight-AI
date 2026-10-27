@@ -113,6 +113,16 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/c
 
 For local sign-in, add `http://localhost:3000/api/auth/callback` to the Google client's redirect URIs.
 
+### 8. Public demo (optional, for showing Spotlight off)
+
+A separate copy that anyone with the link can try: a dozen made-up offers in every state, entered as **Kabir** (the manager) or **Tara** (the actress) with no Google sign-in. It never connects to Gmail, Claude or Telegram, sends nothing, and refills itself with the starting offers every 6 hours (or when a visitor presses **Start over**).
+
+It must have **its own Supabase project and its own Vercel project**. It refuses to start if any real account setting is present.
+
+1. Create a second Supabase project (free plan is fine) and copy its transaction pooler address (port 6543).
+2. In a second Vercel project on the same GitHub repository, set only: `DEMO_MODE=on`, `DATABASE_URL` (the demo database), `APP_URL` (the demo's own address) and a new `SESSION_SECRET`. Don't add Google, Claude, Telegram, `TOKEN_ENCRYPTION_KEY` or `ADMIN_EMAILS`.
+3. Deploy. The first production deploy sets up the database; the first visitor fills it. No scheduled job is needed.
+
 ## Checks
 
 ```bash
@@ -126,6 +136,7 @@ bash scripts/test/dashboard-e2e.sh  # after npm run build: every dashboard actio
 bash scripts/test/alerts-e2e.sh     # after npm run build: alerts against a fake Telegram and a fake phone push service (needs jq)
 bash scripts/test/connector-e2e.sh  # after npm run build: the Claude connector, playing Claude's part (needs jq, openssl)
 bash scripts/test/drafts-e2e.sh     # after npm run build: reply drafts against a fake Claude and a fake Gmail (needs jq)
+bash scripts/test/demo-e2e.sh       # after npm run build: the public demo, on its own database, refusing anything outward
 ```
 
 All of these run on every push in GitHub Actions.

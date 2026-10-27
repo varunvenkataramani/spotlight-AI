@@ -3,11 +3,15 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedBearer } from "@/lib/bearer.ts";
 import { runTick } from "@/lib/scheduler.ts";
+import { demoNotFound } from "@/server/demo.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 async function handle(request: Request) {
+  // The demo reads no mail and sends no alerts: its data is a fixed, made-up set.
+  const blocked = demoNotFound();
+  if (blocked) return blocked;
   if (!isAuthorizedBearer(request.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

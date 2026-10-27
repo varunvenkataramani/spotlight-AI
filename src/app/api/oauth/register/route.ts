@@ -1,6 +1,7 @@
 // Dynamic client registration (RFC 7591): Claude registers itself before asking an admin to allow it.
 // Only Claude's callback addresses are accepted.
 import { NextResponse, type NextRequest } from "next/server";
+import { demoNotFound } from "@/server/demo.ts";
 import { OAuthError, parseRegistration } from "@/lib/oauth/oauth.ts";
 import { extraRedirects, registerClient } from "@/server/oauth.ts";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 const HEADERS = { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" };
 
 export async function POST(request: NextRequest) {
+  const blocked = demoNotFound();
+  if (blocked) return blocked;
   try {
     const raw = await request.text();
     if (raw.length > 10_000) throw new OAuthError("invalid_client_metadata", "Registration too large.");
