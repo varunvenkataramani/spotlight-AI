@@ -16,7 +16,7 @@ import {
   statusesFor,
   DEFAULT_FILTERS,
 } from "./edits.ts";
-import { highlight } from "./highlight.ts";
+import { highlight, highlightNumbered } from "./highlight.ts";
 import { payText, relativeDay } from "./format.ts";
 import { computePriority, EMPTY_PREFERENCES } from "./ai/priority.ts";
 
@@ -80,6 +80,25 @@ test("source quotes are highlighted in the email text", () => {
   );
   assert.deepEqual(highlight("plain", []), [{ text: "plain", mark: false }]);
   assert.deepEqual(highlight("a (b) c", ["(b)"]).filter((s) => s.mark).map((s) => s.text), ["(b)"], "regex characters are literal");
+});
+
+test("numbered quotes keep their number, and overlaps keep the lowest", () => {
+  const body = "Budget: ₹75,000 for 1 reel. Reply by Friday.";
+  const segs = highlightNumbered(body, [
+    { quote: "Reply by Friday", n: 2 },
+    { quote: "₹75,000 for 1 reel", n: 3 },
+    { quote: "Budget: ₹75,000", n: 1 },
+    { quote: "1 reel" },
+  ]);
+  assert.equal(segs.map((s) => s.text).join(""), body);
+  assert.deepEqual(
+    segs.filter((s) => s.mark).map((s) => [s.text, s.n]),
+    [
+      ["Budget: ₹75,000 for 1 reel", 1],
+      ["Reply by Friday", 2],
+    ],
+  );
+  assert.deepEqual(highlightNumbered("a b", [{ quote: "zzz", n: 1 }]), [{ text: "a b", mark: false }]);
 });
 
 test("pay and relative days read naturally", () => {

@@ -70,3 +70,49 @@ export async function listFlagged(): Promise<{ items: FlaggedItem[]; talentEmail
   ]);
   return { items, talentEmail: typeof talent[0]?.value === "string" ? (talent[0].value as string) : null };
 }
+
+export type RunwayMark = { id: string; title: string; organization: string | null; kind: "reply" | "event"; at: Date };
+
+/** The next 14 days: reply-by dates and shoots or events of open, unsnoozed offers. */
+export async function listRunway(days = 14): Promise<RunwayMark[]> {
+  return query<RunwayMark>(
+    `SELECT id, title, organization, kind, at FROM (
+       SELECT id, title, organization, 'reply' AS kind, reply_by_at AS at, status, is_irrelevant, snoozed_until FROM opportunities
+       UNION ALL
+       SELECT id, title, organization, 'event' AS kind, event_start_at AS at, status, is_irrelevant, snoozed_until FROM opportunities
+     ) d
+     WHERE at IS NOT NULL
+       AND at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
+       AND at < (date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') + make_interval(days => $1)) AT TIME ZONE 'Asia/Kolkata'
+       AND NOT is_irrelevant AND (snoozed_until IS NULL OR snoozed_until < now())
+       AND status NOT IN ('declined', 'completed', 'expired', 'archived')
+       AND NOT (kind = 'reply' AND status IN ('confirmed', 'accepted', 'awaiting_their_response'))
+     ORDER BY at
+     LIMIT 60`,
+    [days],
+  );
+}
+
+export type MapPoint = {
+  id: string;
+  title: string;
+  organization: string | null;
+  priority: "high" | "medium" | "low" | "needs_review";
+  next_deadline_at: Date | null;
+  compensation_type: string;
+  compensation_status: string;
+  amount_min: string | null;
+  amount_max: string | null;
+  currency: string;
+};
+
+/** Every open offer, for the map. */
+export async function listMapPoints(): Promise<MapPoint[]> {
+  return query<MapPoint>(
+    `SELECT id, title, organization, priority, next_deadline_at, compensation_type, compensation_status, amount_min, amount_max, currency
+     FROM opportunities
+     WHERE NOT is_irrelevant AND status NOT IN ('declined', 'completed', 'expired', 'archived')
+     ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'needs_review' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, last_activity_at DESC
+     LIMIT 60`,
+  );
+}

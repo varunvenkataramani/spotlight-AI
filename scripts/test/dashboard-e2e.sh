@@ -68,7 +68,9 @@ col() { sql "SELECT $2 FROM opportunities WHERE id = '$1'"; }
 sql "UPDATE opportunities SET is_read = false WHERE id = '$OFFER'" > /dev/null
 html=$(page "/opportunities/$OFFER")
 grep -q "Glow Labs serum reel collaboration" <<<"$html" && pass "detail page shows the offer" || fail "detail page missing title"
-grep -q "<mark[^>]*>Budget: ₹75,000</mark>" <<<"$html" && pass "the email's source words are highlighted" || fail "no highlighted quote"
+grep -qE "<mark[^>]*>(<sup[^>]*>[0-9]+</sup>)?Budget: ₹75,000</mark>" <<<"$html" && pass "the email's source words are highlighted" || fail "no highlighted quote"
+qn=$(grep -oE '<mark id="q-[0-9]+"[^>]*><sup[^>]*>[0-9]+</sup>Budget: ₹75,000</mark>' <<<"$html" | grep -oE 'q-[0-9]+' | head -1)
+[ -n "$qn" ] && grep -q "href=\"#$qn\"" <<<"$html" && pass "the pay is numbered and links to its words in the email" || fail "no numbered source thread"
 grep -q "From the email: “Budget: ₹75,000”" <<<"$html" && pass "each detail shows the words it came from" || fail "no source line"
 [ "$(col "$OFFER" is_read)" = "t" ] && pass "opening a card marks it read" || fail "not marked read"
 [ "$(curl -s -o /dev/null -w "%{http_code}" -H "Cookie: $SESSION" "$BASE/opportunities/00000000-0000-0000-0000-000000000000")" = "404" ] && pass "unknown card is a 404" || fail "unknown card not 404"
@@ -116,12 +118,15 @@ r=$(post "/api/opportunities/$OFFER" action=correct field=priority value=high)
 post "/api/opportunities/$OFFER" action=note text=$'Called Priya.\nBrief coming Friday.' > /dev/null
 [ "$(sql "SELECT detail->>'text' FROM activities WHERE opportunity_id = '$OFFER' AND kind = 'note'")" = $'Called Priya.\nBrief coming Friday.' ] && pass "notes keep their line breaks" || fail "note"
 page "/opportunities/$OFFER" | grep -q "Brief coming Friday" && pass "notes show on the timeline" || fail "note not shown"
+page "/" | grep -q "data-stage=\"$OFFER\"" && pass "a high-priority offer is on the stage" || fail "offer missing from the stage"
 post "/api/opportunities/$OFFER" action=snooze days=3 > /dev/null
 [ "$(col "$OFFER" "snoozed_until > now() + interval '2 days'")" = "t" ] && pass "snoozed for 3 days" || fail "snooze"
-page "/" | grep -q "Glow Labs serum reel collaboration</span>" && fail "snoozed card still in Needs you now" || pass "snoozed cards leave 'Needs you now'"
+page "/" | grep -q "data-stage=\"$OFFER\"" && fail "snoozed card still in Needs you now" || pass "snoozed cards leave 'Needs you now'"
 post "/api/opportunities/$OFFER" action=snooze days=clear > /dev/null
 [ -z "$(col "$OFFER" snoozed_until)" ] && pass "unsnooze works" || fail "unsnooze"
 page "/" | grep -q "Needs you now" && pass "overview shows what needs you" || fail "overview section missing"
+m=$(page "/map")
+grep -q "Every dot, as a list" <<<"$m" && grep -q "href=\"/opportunities/$OFFER\"" <<<"$m" && pass "the map plots open offers" || fail "map page"
 
 # --- Review: scam-like card -----------------------------------------------------------------------------
 [ "$(col "$SCAM" priority)" = "needs_review" ] || fail "scam not in review to begin with"

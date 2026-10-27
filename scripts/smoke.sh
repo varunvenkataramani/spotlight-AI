@@ -43,7 +43,7 @@ code=$(curl -s -o /tmp/login.html -w "%{http_code}" "$BASE/login")
 [ "$code" = "200" ] && grep -q "Continue with Google" /tmp/login.html && pass "sign-in page renders" || fail "sign-in page: HTTP $code"
 
 # 6. Private pages redirect to sign-in when there is no session.
-for path in / /opportunities /review /alerts /settings; do
+for path in / /map /opportunities /review /alerts /settings; do
   loc=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" "$BASE$path")
   [[ "$loc" =~ ^30[0-9]\ .*/login ]] && pass "$path requires sign-in" || fail "$path is not protected: $loc"
 done
