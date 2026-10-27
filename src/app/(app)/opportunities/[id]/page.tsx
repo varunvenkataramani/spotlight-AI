@@ -14,7 +14,7 @@ import { requireAdmin, type AdminSession } from "@/server/session.ts";
 export const metadata: Metadata = { title: "Opportunity" };
 
 const PRIORITY = {
-  high: { label: "High priority", className: "bg-gel text-ink" },
+  high: { label: "High priority", className: "bg-gel text-stage" },
   needs_review: { label: "Check this", className: "border border-alert/60 text-alert" },
   medium: { label: "Medium", className: "border border-ink/25" },
   low: { label: "Low", className: "border border-line text-muted" },
@@ -49,8 +49,17 @@ export default async function OpportunityPage({
   const src = (name: string): FieldSource | undefined => sources.findLast((s) => s.field_name === name);
   const firstSrc = (...names: string[]) => names.map(src).find(Boolean);
   const unverified = (key: string) => o.unverified_fields.includes(key);
+  // Source threads: each fact taken from an email gets a number, and the same number marks its words in the email below.
+  const numbers = new Map<FieldSource, number>();
+  const numbered = (s?: FieldSource) => {
+    if (!s || !s.is_verified || !s.source_quote || !s.email_id || s.corrected_by_name) return { source: s };
+    if (!numbers.has(s)) numbers.set(s, numbers.size + 1);
+    return { source: s, n: numbers.get(s) };
+  };
   const quotesFor = (emailId: string) =>
-    sources.filter((s) => s.email_id === emailId && s.is_verified && s.source_quote).map((s) => s.source_quote!);
+    sources
+      .filter((s) => s.email_id === emailId && s.is_verified && s.source_quote)
+      .map((s) => ({ quote: s.source_quote!, n: numbers.get(s) }));
   const p = PRIORITY[o.priority];
   const who = [o.organization, o.sender_name && o.sender_name !== o.organization ? o.sender_name : null, o.sender_email]
     .filter(Boolean)
@@ -227,7 +236,7 @@ export default async function OpportunityPage({
                   <button className={BUTTON}>Save</button>
                 </ActionForm>
               </FieldRow>
-              <FieldRow label="Company" value={o.organization} source={src("organization")} unverified={unverified("organization")}>
+              <FieldRow label="Company" value={o.organization} {...numbered(src("organization"))} unverified={unverified("organization")}>
                 {textEdit("organization", o.organization)}
               </FieldRow>
               <FieldRow
@@ -239,7 +248,7 @@ export default async function OpportunityPage({
                     {o.is_negotiable === true && <span className="text-muted"> · negotiable</span>}
                   </>
                 }
-                source={src("compensation")}
+                {...numbered(src("compensation"))}
                 unverified={unverified("compensation")}
               >
                 <ActionForm id={id} action="correct" className="grid gap-2 sm:grid-cols-2">
@@ -274,7 +283,7 @@ export default async function OpportunityPage({
               <FieldRow
                 label="Deliverables"
                 value={o.deliverables.length ? o.deliverables.map((d) => d.item).join(", ") : null}
-                source={src("deliverables")}
+                {...numbered(src("deliverables"))}
                 unverified={unverified("deliverables")}
               >
                 <ActionForm id={id} action="correct" className="space-y-2">
@@ -287,7 +296,7 @@ export default async function OpportunityPage({
               <FieldRow
                 label="Reply by"
                 value={o.reply_by_at ? `${formatDay(o.reply_by_at, true)} (${relativeDay(o.reply_by_at)})` : null}
-                source={firstSrc("date:reply_by", "date:deadline")}
+                {...numbered(firstSrc("date:reply_by", "date:deadline"))}
                 unverified={unverified("dates") && !firstSrc("date:reply_by", "date:deadline")?.corrected_by_name}
               >
                 <ActionForm id={id} action="correct" className="flex flex-wrap gap-2">
@@ -303,7 +312,7 @@ export default async function OpportunityPage({
                     ? `${formatDay(o.event_start_at, true)}${o.event_end_at ? ` to ${formatDay(o.event_end_at, true)}` : ""} (${relativeDay(o.event_start_at)})`
                     : null
                 }
-                source={firstSrc("date:event_start", "date:shoot", "date:audition")}
+                {...numbered(firstSrc("date:event_start", "date:shoot", "date:audition"))}
               >
                 <ActionForm id={id} action="correct" className="flex flex-wrap gap-2">
                   <input type="hidden" name="field" value="event_start" />
@@ -311,25 +320,25 @@ export default async function OpportunityPage({
                   <button className={BUTTON}>Save</button>
                 </ActionForm>
               </FieldRow>
-              <FieldRow label="Location" value={o.location} source={src("location")} unverified={unverified("location")}>
+              <FieldRow label="Location" value={o.location} {...numbered(src("location"))} unverified={unverified("location")}>
                 {textEdit("location", o.location)}
               </FieldRow>
-              <FieldRow label="Usage rights" value={o.usage_rights} source={src("usage_rights")} unverified={unverified("usage_rights")}>
+              <FieldRow label="Usage rights" value={o.usage_rights} {...numbered(src("usage_rights"))} unverified={unverified("usage_rights")}>
                 {textEdit("usage_rights", o.usage_rights, true)}
               </FieldRow>
-              <FieldRow label="Exclusivity" value={o.exclusivity} source={src("exclusivity")} unverified={unverified("exclusivity")}>
+              <FieldRow label="Exclusivity" value={o.exclusivity} {...numbered(src("exclusivity"))} unverified={unverified("exclusivity")}>
                 {textEdit("exclusivity", o.exclusivity, true)}
               </FieldRow>
-              <FieldRow label="Expenses covered" value={o.expenses_covered} source={src("expenses_covered")} unverified={unverified("expenses_covered")}>
+              <FieldRow label="Expenses covered" value={o.expenses_covered} {...numbered(src("expenses_covered"))} unverified={unverified("expenses_covered")}>
                 {textEdit("expenses_covered", o.expenses_covered)}
               </FieldRow>
-              <FieldRow label="Their next step" value={o.requested_action} source={src("requested_action")} unverified={unverified("requested_action")}>
+              <FieldRow label="Their next step" value={o.requested_action} {...numbered(src("requested_action"))} unverified={unverified("requested_action")}>
                 {textEdit("requested_action", o.requested_action)}
               </FieldRow>
-              <FieldRow label="Sender's role" value={o.sender_role} source={src("sender_role")} unverified={unverified("sender_role")}>
+              <FieldRow label="Sender's role" value={o.sender_role} {...numbered(src("sender_role"))} unverified={unverified("sender_role")}>
                 {textEdit("sender_role", o.sender_role)}
               </FieldRow>
-              <FieldRow label="Phone" value={o.contact_phone} source={src("contact_phone")} unverified={unverified("contact_phone")}>
+              <FieldRow label="Phone" value={o.contact_phone} {...numbered(src("contact_phone"))} unverified={unverified("contact_phone")}>
                 {textEdit("contact_phone", o.contact_phone)}
               </FieldRow>
             </dl>

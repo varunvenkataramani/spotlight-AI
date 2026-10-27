@@ -3,7 +3,7 @@ import { payText } from "@/lib/format.ts";
 import type { OpportunityCard as Card } from "@/server/opportunities.ts";
 
 const PRIORITY: Record<Card["priority"], { label: string; className: string }> = {
-  high: { label: "High priority", className: "bg-gel text-ink" },
+  high: { label: "High priority", className: "bg-gel text-stage" },
   needs_review: { label: "Check this", className: "border border-alert/60 text-alert" },
   medium: { label: "Medium", className: "border border-ink/25 text-ink" },
   low: { label: "Low", className: "border border-line text-muted" },
@@ -22,6 +22,14 @@ const FIELD_NAMES: Record<string, string> = {
   expenses_covered: "expenses",
   location: "location",
   requested_action: "next step",
+};
+
+/** The light along the top of a card: longer and brighter the more it matters. */
+const LIGHT: Record<Card["priority"], { width: string; className: string }> = {
+  high: { width: "100%", className: "bg-gel" },
+  needs_review: { width: "70%", className: "bg-alert" },
+  medium: { width: "50%", className: "bg-gel/70" },
+  low: { width: "20%", className: "bg-gel/40" },
 };
 
 const DAY = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
@@ -46,7 +54,8 @@ export function OpportunityCard({ o }: { o: Card }) {
   const lowFlags = o.red_flags.filter((f) => f.severity === "low");
 
   return (
-    <article className="rounded-2xl border border-line bg-surface p-5 md:p-6">
+    <article className="relative overflow-hidden rounded-2xl border border-line bg-surface p-5 md:p-6">
+      <span aria-hidden="true" className={`absolute left-0 top-0 h-[3px] ${LIGHT[o.priority].className}`} style={{ width: LIGHT[o.priority].width }} />
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className={`rounded-full px-2.5 py-1 font-semibold ${p.className}`}>{p.label}</span>
         {o.category_name && <span className="text-muted">{o.category_name}</span>}

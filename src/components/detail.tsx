@@ -1,6 +1,6 @@
 // Building blocks of the opportunity detail page. Plain server-rendered forms: no client code needed.
 import { formatDay } from "@/lib/format.ts";
-import { highlight } from "@/lib/highlight.ts";
+import { highlightNumbered } from "@/lib/highlight.ts";
 import { STATUS_LABEL, type Status } from "@/lib/edits.ts";
 import type { FieldSource, ThreadEmail, TimelineItem } from "@/server/opportunity-detail.ts";
 
@@ -40,7 +40,20 @@ export function ActionForm({
 }
 
 /** Where a value came from: the email's own words, a person's correction, or a warning that it couldn't be matched. */
-export function Source({ source, unverified }: { source?: FieldSource; unverified: boolean }) {
+/** The small numbered tag that jumps to the exact words in the email. */
+export function QuoteLink({ n }: { n: number }) {
+  return (
+    <a
+      href={`#q-${n}`}
+      aria-label={`Show quote ${n} in the email`}
+      className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-gel px-1 align-[1px] text-[11px] font-bold text-stage no-underline hover:bg-ink"
+    >
+      {n}
+    </a>
+  );
+}
+
+export function Source({ source, unverified, n }: { source?: FieldSource; unverified: boolean; n?: number }) {
   if (source?.corrected_by_name) return <p className="mt-1 text-xs text-muted">{`Corrected by ${source.corrected_by_name}`}</p>;
   if (unverified || (source && !source.is_verified)) {
     return (
@@ -50,7 +63,13 @@ export function Source({ source, unverified }: { source?: FieldSource; unverifie
       </p>
     );
   }
-  if (source?.source_quote) return <p className="mt-1 text-xs text-muted">{`From the email: “${source.source_quote}”`}</p>;
+  if (source?.source_quote)
+    return (
+      <p className="mt-1 text-xs text-muted">
+        {`From the email: “${source.source_quote}”`}
+        {n !== undefined && <QuoteLink n={n} />}
+      </p>
+    );
   return null;
 }
 
@@ -59,12 +78,14 @@ export function FieldRow({
   value,
   source,
   unverified = false,
+  n,
   children,
 }: {
   label: string;
   value: React.ReactNode;
   source?: FieldSource;
   unverified?: boolean;
+  n?: number;
   children?: React.ReactNode;
 }) {
   const empty = value === null || value === undefined || value === "";
@@ -73,7 +94,7 @@ export function FieldRow({
       <dt className="text-sm font-medium text-muted">{label}</dt>
       <dd className="min-w-0">
         <div className={empty ? "text-muted" : ""}>{empty ? "Not stated" : value}</div>
-        <Source source={source} unverified={unverified} />
+        <Source source={source} unverified={unverified} n={n} />
         {children && (
           <details className="mt-2 text-sm">
             <summary className="cursor-pointer text-muted underline-offset-4 hover:text-ink hover:underline">Edit</summary>
@@ -94,19 +115,26 @@ const ROLE: Record<string, string> = {
   other: "In the thread",
 };
 
-export function EmailCard({ email, quotes }: { email: ThreadEmail; quotes: string[] }) {
+export function EmailCard({ email, quotes }: { email: ThreadEmail; quotes: Array<{ quote: string; n?: number }> }) {
   const body = email.body_text ?? "";
   const long = body.length > 6000;
+  const anchored = new Set<number>(); // each number's anchor goes on its first highlight only
   const render = (text: string) =>
-    highlight(text, quotes).map((s, i) =>
-      s.mark ? (
-        <mark key={i} className="rounded-sm bg-gel-soft px-0.5 text-ink">
+    highlightNumbered(text, quotes).map((s, i) => {
+      if (!s.mark) return <span key={i}>{s.text}</span>;
+      const anchor = s.n !== undefined && !anchored.has(s.n);
+      if (anchor) anchored.add(s.n!);
+      return (
+        <mark key={i} id={anchor ? `q-${s.n}` : undefined} className="scroll-mt-24 rounded-sm bg-gel/25 px-0.5 text-ink">
+          {s.n !== undefined && (
+            <sup aria-label={`quote ${s.n}`} className="mr-0.5 font-bold text-gel">
+              {s.n}
+            </sup>
+          )}
           {s.text}
         </mark>
-      ) : (
-        <span key={i}>{s.text}</span>
-      ),
-    );
+      );
+    });
   return (
     <article className="rounded-2xl border border-line bg-surface">
       <header className="border-b border-line px-5 py-4">

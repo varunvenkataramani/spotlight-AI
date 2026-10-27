@@ -189,7 +189,7 @@ function Connected({ inbox }: { inbox: InboxStatus }) {
             <input id="confirm_delete" type="checkbox" name="confirm" value="delete" required className="mt-1" />
             <span>I understand this deletes everything Spotlight stored from this inbox.</span>
           </label>
-          <button type="submit" className="rounded-full bg-alert px-5 py-2 text-sm font-semibold text-white hover:opacity-90">
+          <button type="submit" className="rounded-full bg-alert px-5 py-2 text-sm font-semibold text-stage hover:opacity-90">
             Disconnect and delete data
           </button>
         </form>

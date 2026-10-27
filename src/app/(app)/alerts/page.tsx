@@ -40,7 +40,7 @@ export default async function AlertsPage() {
               <Link href={a.url ?? "/"} className="grid gap-1 px-5 py-4 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
-                    {!a.read_at && <span className="rounded-full bg-gel px-2 py-0.5 text-xs font-semibold">New</span>}
+                    {!a.read_at && <span className="rounded-full bg-gel px-2 py-0.5 text-xs font-semibold text-stage">New</span>}
                     <span className="font-medium">{a.title}</span>
                   </span>
                   {a.body && <span className="mt-0.5 block whitespace-pre-line break-words text-sm text-muted">{a.body}</span>}

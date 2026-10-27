@@ -41,10 +41,10 @@ export default async function LoginPage({
       : null;
 
   return (
-    <main className="stage-light flex min-h-dvh items-end text-paper sm:items-center">
+    <main className="stage-light flex min-h-dvh items-end text-ink sm:items-center">
       <div className="w-full max-w-xl px-6 pb-16 pt-24 sm:px-16 sm:pb-24">
         <h1 className="font-display text-6xl font-semibold leading-none tracking-tight sm:text-8xl">Spotlight</h1>
-        <p className="mt-6 max-w-md text-lg leading-relaxed text-paper/75">
+        <p className="mt-6 max-w-md text-lg leading-relaxed text-ink/75">
           Every offer in her inbox, read, sorted and ready for a decision.
         </p>
 
@@ -54,19 +54,19 @@ export default async function LoginPage({
           </p>
         )}
         {!error && params.signed_out && (
-          <p role="status" className="mt-8 text-sm text-paper/70">
+          <p role="status" className="mt-8 text-sm text-ink/70">
             You're signed out.
           </p>
         )}
 
         <a
           href={next ? `/api/auth/login?next=${encodeURIComponent(next)}` : "/api/auth/login"}
-          className="mt-10 inline-flex items-center gap-3 rounded-full bg-gel px-6 py-3 font-semibold text-ink transition-colors hover:bg-[#f6c460]"
+          className="mt-10 inline-flex items-center gap-3 rounded-full bg-gel px-6 py-3 font-semibold text-stage transition-colors hover:bg-[#f6c460]"
         >
           <GoogleMark />
           Continue with Google
         </a>
-        <p className="mt-4 text-sm text-paper/55">
+        <p className="mt-4 text-sm text-ink/55">
           {next?.startsWith("/oauth/authorize") ? "Sign in to connect Claude to Spotlight. Only the two admin accounts can." : "Only the two admin accounts can sign in."}
         </p>
       </div>

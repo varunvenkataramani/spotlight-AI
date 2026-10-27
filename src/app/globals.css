@@ -1,17 +1,22 @@
 @import "tailwindcss";
 
+/* "The Stage": a dark, quiet room with one warm light.
+   ink = the main (light) text and primary buttons; paper = the stage floor (page);
+   surface = raised cards; stage = true dark, for text on the amber gel. */
 @theme {
-  --color-ink: #17152b;
-  --color-ink-soft: #24213d;
-  --color-ink-line: #35314f;
-  --color-paper: #f6f5f9;
-  --color-surface: #ffffff;
-  --color-line: #e4e1ec;
-  --color-muted: #6a6680;
+  --color-ink: #f3f1ea;
+  --color-ink-soft: #dcd8cc;
+  --color-ink-line: #2a2836;
+  --color-paper: #0e0d14;
+  --color-surface: #16151f;
+  --color-raised: #1c1b26;
+  --color-line: #2a2836;
+  --color-muted: #a19db0;
+  --color-stage: #0e0d14;
   --color-gel: #f2b33d;
-  --color-gel-soft: #fdf1d8;
-  --color-alert: #c8364f;
-  --color-ok: #2f8f6b;
+  --color-gel-soft: #2b2416;
+  --color-alert: #ff7a6b;
+  --color-ok: #4cc38a;
 }
 
 @theme inline {
@@ -20,6 +25,8 @@
 }
 
 html {
+  color-scheme: dark;
+  scroll-padding-top: 5rem;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -41,7 +48,7 @@ body {
   background:
     radial-gradient(ellipse 46% 30% at 30% 78%, rgb(242 179 61 / 0.30), transparent 70%),
     radial-gradient(ellipse 22% 60% at 30% 10%, rgb(242 179 61 / 0.10), transparent 75%),
-    var(--color-ink);
+    var(--color-stage);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -52,4 +59,38 @@ body {
     from { background-color: #0d0c1a; filter: brightness(0.55); }
     to { filter: brightness(1); }
   }
+}
+
+/* The spotlight beam: a soft cone of the gel light falling on what matters. */
+.beam {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: min(760px, 100%);
+  transform: translateX(-50%);
+  clip-path: polygon(41% 0, 59% 0, 100% 100%, 0 100%);
+  background: var(--color-gel);
+  opacity: 0.09;
+  pointer-events: none;
+}
+.beam-floor {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  width: min(640px, 90%);
+  height: 64px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--color-gel);
+  opacity: 0.08;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .beam { animation: beam-up 1.2s ease-out both; }
+  @keyframes beam-up { from { opacity: 0; } to { opacity: 0.09; } }
+}
+
+/* Source threads: the email words a fact came from light up when its number is followed. */
+mark[id]:target {
+  outline: 2px solid var(--color-gel);
+  outline-offset: 2px;
 }
