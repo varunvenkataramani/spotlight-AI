@@ -6,6 +6,7 @@ import { EditError } from "@/lib/edits.ts";
 import { disconnectTelegram, saveAlertSettings, sendTestAlert, setTalent, startTelegramLink } from "@/server/alerts.ts";
 import { backWith } from "@/server/form-redirect.ts";
 import { revokeConnection } from "@/server/oauth.ts";
+import { DEMO_BLOCKED, isDemoMode } from "@/server/demo.ts";
 import { saveReplyPrefs } from "@/server/drafts.ts";
 import { isCrossSite } from "@/server/request-guard.ts";
 import { requireAdmin } from "@/server/session.ts";
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest) {
     form = new FormData();
   }
   const back = "/settings#alerts";
+  if (isDemoMode() && ["talent", "telegram_connect", "test"].includes(String(form.get("action")))) {
+    return backWith(request, back, "error", DEMO_BLOCKED);
+  }
   try {
     switch (form.get("action")) {
       case "alerts":

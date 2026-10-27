@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { ConfigError, readWebConfig } from "@/lib/config.ts";
+import { notFound, redirect } from "next/navigation";
+import { ConfigError, isDemoMode, readWebConfig } from "@/lib/config.ts";
 import { checkAuthorize } from "@/server/oauth.ts";
 import { getCurrentAdmin } from "@/server/session.ts";
 
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const FIELDS = ["response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "resource", "scope"];
 
 export default async function AuthorizePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  if (isDemoMode()) notFound(); // No Claude connector in the demo.
   const sp = await searchParams;
   const get = (k: string) => {
     const v = sp[k];

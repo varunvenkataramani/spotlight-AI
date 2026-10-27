@@ -93,6 +93,10 @@ jobs:
         timeout-minutes: 5
         run: bash scripts/test/connector-e2e.sh
 
+      - name: Public demo end to end (made-up data, nothing sent)
+        timeout-minutes: 5
+        run: bash scripts/test/demo-e2e.sh
+
       - name: Through a transaction pooler (like Supabase's)
         timeout-minutes: 5
         run: |

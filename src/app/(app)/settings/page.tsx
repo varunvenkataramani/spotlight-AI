@@ -45,7 +45,7 @@ export default async function SettingsPage({
   }
   const lastLogin = new Map(admins.map((a) => [a.email, a.last_login_at]));
 
-  const schedulerText = {
+  const schedulerText = config.demo ? "Paused in the demo: it reads no mail, so its offers stay as they are." : {
     ok: `Running every minute. Last run ${formatIST(health.schedulerLastRunAt)}.`,
     stale: `No run since ${formatIST(health.schedulerLastRunAt)}. Check the spotlight-tick job in Supabase (Integrations > Cron).`,
     never_seen: "Hasn't run yet. Set up the spotlight-tick job in Supabase (README, step 4).",
@@ -95,7 +95,7 @@ export default async function SettingsPage({
           </section>
         )}
         {alerts && <AlertsPanel s={alerts} isTalent={alerts.talentEmail === me.email} />}
-        {connections && <ConnectorPanel url={mcpResource(config.appUrl)} connections={connections} />}
+        {connections && !config.demo && <ConnectorPanel url={mcpResource(config.appUrl)} connections={connections} />}
         {ai && <AiPanel ai={ai} />}
 
         <section className="rounded-2xl border border-line bg-surface p-6">
@@ -109,7 +109,7 @@ export default async function SettingsPage({
               </dd>
             </div>
             <div className="flex items-start gap-3 py-3">
-              <StatusDot tone={health.scheduler === "ok" ? "ok" : health.scheduler === "stale" ? "bad" : "warn"} />
+              <StatusDot tone={config.demo ? "idle" : health.scheduler === "ok" ? "ok" : health.scheduler === "stale" ? "bad" : "warn"} />
               <dt className="w-32 shrink-0 font-medium">Background jobs</dt>
               <dd className="text-muted">{schedulerText}</dd>
             </div>

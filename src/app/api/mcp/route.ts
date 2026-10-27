@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { ConfigError, readWebConfig } from "@/lib/config.ts";
 import { handleMessage, isSupportedVersionHeader } from "@/lib/mcp/protocol.ts";
 import { wwwAuthenticate } from "@/lib/oauth/oauth.ts";
+import { demoNotFound } from "@/server/demo.ts";
 import { runConnectorTool } from "@/server/mcp-tools.ts";
 import { adminForAccessToken } from "@/server/oauth.ts";
 
@@ -14,6 +15,8 @@ const rpcError = (status: number, message: string, headers: Record<string, strin
   NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message } }, { status, headers });
 
 export async function POST(request: NextRequest) {
+  const blocked = demoNotFound();
+  if (blocked) return blocked;
   let config;
   try {
     config = readWebConfig();

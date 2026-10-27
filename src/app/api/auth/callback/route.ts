@@ -1,7 +1,7 @@
 // Google sends the admin back here. Every check must pass before a session is created.
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { readWebConfig } from "@/lib/config.ts";
+import { isDemoMode, readWebConfig } from "@/lib/config.ts";
 import { isAllowedAdmin } from "@/lib/allowlist.ts";
 import { exchangeCodeForIdentity, SignInError, type OAuthStart } from "@/lib/google-oidc.ts";
 import { safeNextPath } from "@/lib/oauth/oauth.ts";
@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     return response;
   };
 
+  if (isDemoMode()) return NextResponse.redirect(new URL("/login", request.url));
   let config;
   try {
     config = readWebConfig();

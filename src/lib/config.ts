@@ -14,9 +14,33 @@ export type WebConfig = {
   googleClientSecret: string;
   sessionSecret: string;
   isProduction: boolean;
+  /** The public showcase copy (DEMO_MODE=on): made-up data, no Google, no AI, nothing sent. */
+  demo: boolean;
 };
 
 export class ConfigError extends Error {}
+
+// --- Demo mode ---------------------------------------------------------------------------------------
+// A public showcase copy with made-up offers: no Google sign-in, no Gmail, no AI, nothing sent.
+// It must run on its own Vercel project and database, so it refuses to start next to real accounts.
+
+/** The two made-up admins visitors enter the demo as. */
+export const DEMO_MANAGER_EMAIL = "kabir.demo@example.com";
+export const DEMO_TALENT_EMAIL = "tara.demo@example.com";
+const REAL_ACCOUNT_SETTINGS = ["GOOGLE_CLIENT_SECRET", "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "TOKEN_ENCRYPTION_KEY"];
+
+export function isDemoMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.DEMO_MODE?.trim() === "on";
+}
+
+function assertDemoIsolated(env: NodeJS.ProcessEnv) {
+  const real = REAL_ACCOUNT_SETTINGS.filter((n) => env[n]?.trim());
+  if (real.length > 0) {
+    throw new ConfigError(
+      `DEMO_MODE is on, but real account settings are present (${real.join(", ")}). Run the demo as its own Vercel project with its own database, without them.`,
+    );
+  }
+}
 
 function required(env: NodeJS.ProcessEnv, names: string[]): Record<string, string> {
   const missing = names.filter((n) => !env[n]?.trim());
@@ -67,7 +91,9 @@ export type AlertConfig = {
 
 /** What alerts need. Telegram is optional; phone notifications need nothing extra. */
 export function readAlertConfig(env: NodeJS.ProcessEnv = process.env): AlertConfig {
-  const v = required(env, ["APP_URL", "ADMIN_EMAILS", "SESSION_SECRET"]);
+  const demo = isDemoMode(env);
+  if (demo) assertDemoIsolated(env);
+  const v = required(env, demo ? ["APP_URL", "SESSION_SECRET"] : ["APP_URL", "ADMIN_EMAILS", "SESSION_SECRET"]);
   let sessionSecret: string;
   try {
     sessionSecret = assertSecret(v.SESSION_SECRET);
@@ -81,7 +107,7 @@ export function readAlertConfig(env: NodeJS.ProcessEnv = process.env): AlertConf
   const appUrl = v.APP_URL!.replace(/\/+$/, "");
   return {
     appUrl,
-    admins: parseAllowlist(v.ADMIN_EMAILS),
+    admins: demo ? new Set([DEMO_MANAGER_EMAIL, DEMO_TALENT_EMAIL]) : parseAllowlist(v.ADMIN_EMAILS),
     telegram: token
       ? { token, apiBase: env.TELEGRAM_API_BASE?.trim().replace(/\/+$/, "") || "https://api.telegram.org", webhookSecret: webhookSecretFor(token, sessionSecret) }
       : null,
@@ -99,6 +125,27 @@ export function readDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function readWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
+  if (isDemoMode(env)) {
+    assertDemoIsolated(env);
+    const d = required(env, ["APP_URL", "DATABASE_URL", "SESSION_SECRET"]);
+    if (!/^https?:\/\/[^/\s]+/.test(d.APP_URL!)) throw new ConfigError("APP_URL must start with https:// followed by the site's address.");
+    let secret: string;
+    try {
+      secret = assertSecret(d.SESSION_SECRET);
+    } catch {
+      throw new ConfigError("SESSION_SECRET is too short. Use a generated secret of at least 32 characters.");
+    }
+    return {
+      appUrl: d.APP_URL!.replace(/\/+$/, ""),
+      databaseUrl: d.DATABASE_URL!,
+      admins: new Set([DEMO_MANAGER_EMAIL, DEMO_TALENT_EMAIL]),
+      googleClientId: "",
+      googleClientSecret: "",
+      sessionSecret: secret,
+      isProduction: env.NODE_ENV === "production",
+      demo: true,
+    };
+  }
   const v = required(env, [
     "APP_URL",
     "DATABASE_URL",
@@ -126,5 +173,6 @@ export function readWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
     googleClientSecret: v.GOOGLE_CLIENT_SECRET!,
     sessionSecret,
     isProduction: env.NODE_ENV === "production",
+    demo: false,
   };
 }

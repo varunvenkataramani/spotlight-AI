@@ -2,6 +2,7 @@
 // Only calls carrying the secret Spotlight gave Telegram are accepted, only linked admin chats can
 // act, and the only thing a chat can do is link itself or answer an offer that was put to her.
 import { NextResponse, type NextRequest } from "next/server";
+import { demoNotFound } from "@/server/demo.ts";
 import { getPool, query } from "@/lib/db.ts";
 import { RESPONSE_LABEL, parseAnswerData } from "@/lib/alerts/rules.ts";
 import { hashLinkCode, isTelegramWebhook, parseStartCode, telegram, type TelegramConfig } from "@/lib/alerts/telegram.ts";
@@ -21,6 +22,8 @@ type Update = {
 const ok = () => NextResponse.json({ ok: true });
 
 export async function POST(request: NextRequest) {
+  const blocked = demoNotFound();
+  if (blocked) return blocked;
   const cfg = alertConfigOrNull();
   if (!cfg?.telegram) return NextResponse.json({ error: "not_configured" }, { status: 404 });
   if (!isTelegramWebhook(request.headers.get("x-telegram-bot-api-secret-token"), cfg.telegram.webhookSecret)) {

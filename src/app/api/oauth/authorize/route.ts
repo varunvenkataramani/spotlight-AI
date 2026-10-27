@@ -1,6 +1,7 @@
 // The "Allow" / "Don't allow" buttons on the connect page. Re-checks everything, then sends the
 // browser back to Claude with a one-time code (or a refusal).
 import { NextResponse, type NextRequest } from "next/server";
+import { demoNotFound } from "@/server/demo.ts";
 import { readWebConfig } from "@/lib/config.ts";
 import { callbackUrl } from "@/lib/oauth/oauth.ts";
 import { checkAuthorize, issueCode } from "@/server/oauth.ts";
@@ -10,6 +11,8 @@ import { requireAdmin } from "@/server/session.ts";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const blocked = demoNotFound();
+  if (blocked) return blocked;
   const admin = await requireAdmin();
   if (isCrossSite(request)) return NextResponse.json({ error: "cross_site" }, { status: 403 });
   const config = readWebConfig();

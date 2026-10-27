@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { readGmailConfig } from "@/lib/config.ts";
 import { googleEndpoints, revokeToken } from "@/lib/gmail/google.ts";
 import { decryptSecret } from "@/lib/token-crypto.ts";
+import { DEMO_BLOCKED, isDemoMode } from "@/server/demo.ts";
 import { deleteInboxAndData, getInboxForDisconnect } from "@/server/gmail.ts";
 import { requireAdmin } from "@/server/session.ts";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const admin = await requireAdmin();
   const go = (outcome: string) => NextResponse.redirect(new URL(`/settings?gmail=${outcome}`, request.url), 303);
+  if (isDemoMode()) return NextResponse.redirect(new URL(`/settings?error=${encodeURIComponent(DEMO_BLOCKED)}`, request.url), 303);
 
   let confirmed = false;
   try {
