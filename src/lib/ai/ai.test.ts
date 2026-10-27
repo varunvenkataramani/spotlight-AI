@@ -359,6 +359,22 @@ test("Claude errors are sorted into retry-later and fix-the-account", async () =
   assert.equal(r.data, undefined);
 });
 
+test("no credit and unavailable models pause sorting instead of setting emails aside", async () => {
+  const answer = (status: number, error: object) => (async () => new Response(JSON.stringify({ type: "error", error }), { status })) as unknown as typeof fetch;
+  const call = (status: number, error: object) =>
+    callJson({ apiKey: "k", baseUrl: "https://x", model: "m", system: "s", user: "u", schema: { type: "object" }, maxTokens: 5, timeoutMs: 1000, fetchImpl: answer(status, error) });
+  const credit = {
+    type: "invalid_request_error",
+    message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+  };
+  await assert.rejects(call(400, credit), (e: unknown) => e instanceof ClaudeApiError && e.accountProblem === "credit" && e.isAccountProblem && !e.isTransient);
+  await assert.rejects(call(404, { type: "not_found_error", message: "model: claude-x" }), (e: unknown) => e instanceof ClaudeApiError && e.accountProblem === "model");
+  await assert.rejects(call(403, { type: "permission_error", message: "nope" }), (e: unknown) => e instanceof ClaudeApiError && e.accountProblem === "key");
+  // A plain bad request (for example about one email) is still that email's problem.
+  await assert.rejects(call(400, { type: "invalid_request_error", message: "prompt is too long" }), (e: unknown) => e instanceof ClaudeApiError && e.accountProblem === null);
+  await assert.rejects(call(400, credit), (e: unknown) => e instanceof ClaudeApiError && e.message === "Claude answered 400 (invalid_request_error)");
+});
+
 test("the test override for Claude's address is ignored in production", () => {
   assert.equal(anthropicBaseUrl({ ANTHROPIC_API_BASE_OVERRIDE: "http://localhost:4020" } as never), "http://localhost:4020");
   assert.equal(anthropicBaseUrl({ ANTHROPIC_API_BASE_OVERRIDE: "http://evil", VERCEL_ENV: "production" } as never), "https://api.anthropic.com");

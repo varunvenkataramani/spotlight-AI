@@ -13,9 +13,14 @@ export function anthropicBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
 
 export class ClaudeApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** Claude's own error type and wording (about the request or account, never the email). Not logged. */
+  readonly type: string | null;
+  readonly detail: string | null;
+  constructor(status: number, message: string, type: string | null = null, detail: string | null = null) {
     super(message);
     this.status = status;
+    this.type = type;
+    this.detail = detail;
   }
   /** Worth retrying later: rate limits, overload, server errors, timeouts (status 0). */
   get isTransient(): boolean {
@@ -23,7 +28,17 @@ export class ClaudeApiError extends Error {
   }
   /** The key is missing, wrong or out of credit: no point retrying until an admin fixes it. */
   get isAccountProblem(): boolean {
-    return this.status === 401 || this.status === 403 || this.status === 402;
+    return this.accountProblem !== null;
+  }
+  /**
+   * Which account problem, if any. Claude reports "no credit" as a 400 with a billing message, and an
+   * unavailable model as a 404: both are about the account, not the email, so sorting should pause.
+   */
+  get accountProblem(): "key" | "credit" | "model" | null {
+    if (this.status === 401 || this.status === 403) return "key";
+    if (this.status === 402 || (this.status === 400 && /credit balance|billing|purchase credits|plans? (&|and) billing/i.test(this.detail ?? ""))) return "credit";
+    if (this.status === 404 && (this.type === "not_found_error" || /model/i.test(this.detail ?? ""))) return "model";
+    return null;
   }
 }
 
@@ -66,8 +81,10 @@ export async function callJson(call: JsonCall): Promise<JsonResult> {
   }
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { error?: { type?: string } };
-    throw new ClaudeApiError(response.status, `Claude answered ${response.status}${body.error?.type ? ` (${body.error.type})` : ""}`);
+    const body = (await response.json().catch(() => ({}))) as { error?: { type?: string; message?: string } };
+    const type = typeof body.error?.type === "string" ? body.error.type.slice(0, 60) : null;
+    const detail = typeof body.error?.message === "string" ? body.error.message.slice(0, 300) : null;
+    throw new ClaudeApiError(response.status, `Claude answered ${response.status}${type ? ` (${type})` : ""}`, type, detail);
   }
 
   const body = (await response.json()) as {
