@@ -163,7 +163,7 @@ call record_her_answer "{\"id\":\"$O2\",\"answer\":\"pass\"}"; t=$T
 [ "$IS_ERROR" = "true" ] && grep -q "isn't waiting for her answer" <<<"$t" && pass "only for offers put to her" || fail "answer unflagged: $t"
 TOMORROW=$(TZ=Asia/Kolkata date -d tomorrow +%F)
 call set_reminder "{\"id\":\"$O1\",\"date\":\"$TOMORROW\",\"time\":\"09:30\",\"note\":\"Chase the brief\"}"; t=$T
-[ "$(sql "SELECT to_char(due_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') || ' ' || (for_user = '$M_ID') FROM reminders WHERE note = 'Chase the brief'")" = "09:30 t" ] && pass "set_reminder sets one for the person asking, in India time" || fail "reminder: $t"
+[ "$(sql "SELECT to_char(due_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') || ' ' || (for_user = '$M_ID')::text FROM reminders WHERE note = 'Chase the brief'")" = "09:30 true" ] && pass "set_reminder sets one for the person asking, in India time" || fail "reminder: $t"
 call set_reminder "{\"id\":\"$O1\",\"date\":\"next friday\"}"; t=$T
 [ "$IS_ERROR" = "true" ] && pass "unclear dates are refused, not guessed" || fail "reminder date: $t"
 call snooze_offer "{\"id\":\"$O2\",\"days\":3}" > /dev/null
