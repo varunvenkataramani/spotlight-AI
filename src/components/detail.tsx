@@ -209,6 +209,16 @@ function describe(item: TimelineItem): React.ReactNode {
       return `${who} set a reminder for ${typeof d.at === "string" ? WHEN.format(new Date(d.at)) : "later"}${d.forBoth ? " for both" : ""}${d.note ? `: ${str(d.note)}` : ""}`;
     case "reminder_cancelled":
       return `${who} cancelled a reminder`;
+    case "reply_drafted":
+      return `${who} had Claude draft a reply (${str(d.mode).toLowerCase()})`;
+    case "reply_edited":
+      return `${who} edited a reply draft`;
+    case "reply_saved_to_gmail":
+      return `${who} saved a reply to Gmail's drafts`;
+    case "reply_sent":
+      return `${who} sent a reply to ${str(d.to)}: “${str(d.subject)}”`;
+    case "reply_discarded":
+      return `${who} discarded a reply draft`;
     case "linked_by_sender":
       return "An email was linked because it's from the same sender. Check it belongs here.";
     default:

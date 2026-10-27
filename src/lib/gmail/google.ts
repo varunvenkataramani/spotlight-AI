@@ -3,6 +3,7 @@
 import { codeChallengeFor, identityFromIdToken, type GoogleIdentity } from "../google-oidc.ts";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const GMAIL_COMPOSE_SCOPE = "https://www.googleapis.com/auth/gmail.compose"; // same as compose.ts
 
 export type GoogleEndpoints = { auth: string; token: string; revoke: string; gmail: string };
 
@@ -37,13 +38,16 @@ export function buildGmailConnectUrl(params: {
   state: string;
   codeVerifier: string;
   loginHint?: string;
+  /** Also ask to save drafts and send replies (gmail.compose). Earlier permissions are kept. */
+  allowSend?: boolean;
   endpoints?: GoogleEndpoints;
 }): string {
   const url = new URL((params.endpoints ?? REAL_ENDPOINTS).auth);
   url.searchParams.set("client_id", params.clientId);
   url.searchParams.set("redirect_uri", params.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", `openid email ${GMAIL_READONLY_SCOPE}`);
+  url.searchParams.set("scope", `openid email ${GMAIL_READONLY_SCOPE}${params.allowSend ? ` ${GMAIL_COMPOSE_SCOPE}` : ""}`);
+  url.searchParams.set("include_granted_scopes", "true");
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent"); // always returns a refresh token
   url.searchParams.set("state", params.state);

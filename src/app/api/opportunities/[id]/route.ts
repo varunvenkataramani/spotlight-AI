@@ -14,11 +14,14 @@ import {
   snooze,
   withdrawFlag,
 } from "@/server/actions.ts";
+import { createReplyDraft, discardDraft, saveDraftEdits, saveToGmail, sendDraft } from "@/server/drafts.ts";
 import { backWith, safeBackPath } from "@/server/form-redirect.ts";
 import { isCrossSite, isUuid } from "@/server/request-guard.ts";
 import { requireAdmin } from "@/server/session.ts";
 
 export const dynamic = "force-dynamic";
+// Writing a reply with Claude can take a while.
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -62,6 +65,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return backWith(request, back, "done", await addReminder(admin, id, form));
       case "cancel_reminder":
         return backWith(request, back, "done", await cancelReminder(admin, id, form.get("reminder")));
+      case "draft": {
+        const { message, draftId } = await createReplyDraft(admin, id, form);
+        return backWith(request, `/opportunities/${id}${draftId ? `#draft-${draftId}` : "#reply"}`, "done", message);
+      }
+      case "draft_save":
+        return backWith(request, `/opportunities/${id}#draft-${form.get("draft")}`, "done", await saveDraftEdits(admin, id, form));
+      case "draft_discard":
+        return backWith(request, `/opportunities/${id}#reply`, "done", await discardDraft(admin, id, form));
+      case "draft_gmail":
+        return backWith(request, `/opportunities/${id}#draft-${form.get("draft")}`, "done", await saveToGmail(admin, id, form));
+      case "draft_send":
+        return backWith(request, `/opportunities/${id}#draft-${form.get("draft")}`, "done", await sendDraft(admin, id, form));
       default:
         return backWith(request, back, "error", "That action isn't available.");
     }

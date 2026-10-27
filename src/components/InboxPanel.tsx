@@ -60,7 +60,7 @@ function NotConnected() {
     <form action="/api/gmail/connect" method="get" className="mt-4 space-y-4">
       <p className="max-w-2xl text-sm leading-relaxed text-muted">
         Connect the Gmail inbox Spotlight should watch. Google will ask for permission to read email; Spotlight can't send,
-        delete or change anything in the inbox.
+        delete or change anything in the inbox unless you later allow replies.
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <label className="grid gap-1 text-sm font-medium" htmlFor="scan_days">
@@ -123,6 +123,28 @@ function Connected({ inbox }: { inbox: InboxStatus }) {
             {inbox.waiting > 0 && ` ${inbox.waiting} waiting.`}
           </dd>
         </div>
+        <div className="flex flex-wrap items-start gap-3 py-3">
+          <StatusDot tone={inbox.canReply ? "ok" : "idle"} />
+          <dt className="w-32 shrink-0 font-medium">Replies</dt>
+          <dd className="min-w-0 space-y-2 text-muted">
+            {inbox.canReply ? (
+              <p>Allowed: approved reply drafts can be saved to Gmail or sent from Spotlight. Nothing goes out without an admin confirming.</p>
+            ) : (
+              <>
+                <p>
+                  Not allowed yet. To save reply drafts in Gmail or send them from Spotlight, Google must also allow Spotlight to manage drafts and
+                  send email. Spotlight only ever sends a reply an admin has read and confirmed.
+                </p>
+                <a
+                  href={`/api/gmail/connect?send=1&hint=${encodeURIComponent(inbox.email)}`}
+                  className="inline-block rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper hover:bg-ink-soft"
+                >
+                  Allow replies
+                </a>
+              </>
+            )}
+          </dd>
+        </div>
         {inbox.stuck > 0 && (
           <div className="flex flex-wrap items-start gap-3 py-3">
             <StatusDot tone="warn" />
@@ -144,7 +166,7 @@ function Connected({ inbox }: { inbox: InboxStatus }) {
 
       <div className="flex flex-wrap items-center gap-3">
         <a
-          href={`/api/gmail/connect?hint=${encodeURIComponent(inbox.email)}`}
+          href={`/api/gmail/connect?hint=${encodeURIComponent(inbox.email)}${inbox.canReply ? "&send=1" : ""}`}
           className={
             needsReconnect
               ? "rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-paper hover:bg-ink-soft"

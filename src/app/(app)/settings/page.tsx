@@ -11,6 +11,7 @@ import { getSystemHealth } from "@/server/health.ts";
 import { getAiOverview, type AiOverview } from "@/server/opportunities.ts";
 import { getAlertSettings, type AlertSettings } from "@/server/alerts.ts";
 import { listConnections, type Connection } from "@/server/oauth.ts";
+import { getReplyPrefs } from "@/server/drafts.ts";
 import { mcpResource } from "@/lib/oauth/oauth.ts";
 import { requireAdmin } from "@/server/session.ts";
 import { listAdmins, type AdminRow } from "@/server/users.ts";
@@ -31,13 +32,15 @@ export default async function SettingsPage({
   let ai: AiOverview | null = null;
   let alerts: AlertSettings | null = null;
   let connections: Connection[] | null = null;
+  let replyPrefs: { signature: string; facts: string } | null = null;
   if (health.database === "ok") {
-    [admins, inbox, ai, alerts, connections] = await Promise.all([
+    [admins, inbox, ai, alerts, connections, replyPrefs] = await Promise.all([
       listAdmins(),
       getInboxStatus(),
       getAiOverview(),
       getAlertSettings(me),
       listConnections(me.userId),
+      getReplyPrefs(),
     ]);
   }
   const lastLogin = new Map(admins.map((a) => [a.email, a.last_login_at]));
@@ -56,6 +59,41 @@ export default async function SettingsPage({
 
       <div className="space-y-6">
         {health.database === "ok" && <InboxPanel inbox={inbox} outcome={outcome} />}
+        {replyPrefs && (
+          <section id="replies" className="scroll-mt-8 rounded-2xl border border-line bg-surface p-6">
+            <h2 className="font-display text-xl font-semibold">Reply drafts</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted">
+              Claude uses these when it drafts replies. It never adds facts that aren't here, in the offer or in what you type for that reply.
+            </p>
+            <form method="post" action="/api/settings" className="mt-4 space-y-3 text-sm">
+              <input type="hidden" name="action" value="reply_prefs" />
+              <label className="grid gap-1">
+                <span className="font-medium">Sign replies as</span>
+                <textarea
+                  name="signature"
+                  rows={3}
+                  maxLength={300}
+                  defaultValue={replyPrefs.signature}
+                  placeholder={"Warm regards,\nVarun\nManager to Ananya"}
+                  className="rounded-lg border border-line bg-surface px-3 py-2"
+                />
+              </label>
+              <label className="grid gap-1">
+                <span className="font-medium">Facts about her that replies may use</span>
+                <textarea
+                  name="facts"
+                  rows={4}
+                  maxLength={1500}
+                  defaultValue={replyPrefs.facts}
+                  placeholder={"Portfolio: https://…\nBased in Mumbai; travels for shoots.\nLanguages: Hindi, English, Marathi."}
+                  className="rounded-lg border border-line bg-surface px-3 py-2"
+                />
+                <span className="text-xs text-muted">Don't put her phone number or rates here unless you want them in replies.</span>
+              </label>
+              <button className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper hover:bg-ink-soft">Save</button>
+            </form>
+          </section>
+        )}
         {alerts && <AlertsPanel s={alerts} isTalent={alerts.talentEmail === me.email} />}
         {connections && <ConnectorPanel url={mcpResource(config.appUrl)} connections={connections} />}
         {ai && <AiPanel ai={ai} />}

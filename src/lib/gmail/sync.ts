@@ -126,7 +126,11 @@ async function syncInbox(account: AccountRow, deps: SyncDeps): Promise<SyncRepor
   }
 }
 
-async function ensureAccessToken(account: AccountRow, deps: SyncDeps): Promise<string> {
+/** A working access token for the inbox, refreshed when it's about to expire. Also used for sending replies. */
+export async function ensureAccessToken(
+  account: Pick<AccountRow, "id" | "refresh_token_enc" | "access_token_enc" | "access_token_expires_at">,
+  deps: Pick<SyncDeps, "tokenKey" | "clientId" | "clientSecret" | "endpoints" | "fetchImpl">,
+): Promise<string> {
   const valid =
     account.access_token_enc && account.access_token_expires_at && account.access_token_expires_at.getTime() > Date.now() + 120_000;
   if (valid) return decryptSecret(account.access_token_enc!, deps.tokenKey);

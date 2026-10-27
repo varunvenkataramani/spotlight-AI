@@ -6,6 +6,8 @@ import { dayValueIST, STATUS_LABEL, STATUSES } from "@/lib/edits.ts";
 import { formatDay, payText, relativeDay } from "@/lib/format.ts";
 import { getDetail, type Detail, type FieldSource, type ReminderRow } from "@/server/opportunity-detail.ts";
 import { markOpened } from "@/server/actions.ts";
+import { listDrafts } from "@/server/drafts.ts";
+import { ReplyPanel } from "@/components/ReplyPanel";
 import { isUuid } from "@/server/request-guard.ts";
 import { requireAdmin, type AdminSession } from "@/server/session.ts";
 
@@ -41,6 +43,7 @@ export default async function OpportunityPage({
   const data = await getDetail(id);
   if (!data) notFound();
   const { opportunity: o, sources, emails, timeline, categories, reminders, talentEmail } = data;
+  const reply = await listDrafts(id);
   if (!o.is_read) await markOpened(id);
 
   const src = (name: string): FieldSource | undefined => sources.findLast((s) => s.field_name === name);
@@ -351,6 +354,9 @@ export default async function OpportunityPage({
           </section>
         </div>
 
+        <div className="min-w-0 space-y-10">
+        <ReplyPanel oppId={id} drafts={reply.drafts} canWrite={reply.canWrite} inboxEmail={reply.inboxEmail} aiOn={reply.aiOn} hasEmail={emails.length > 0} />
+
         <section aria-labelledby="h-emails" className="min-w-0">
           <h2 id="h-emails" className="font-display text-xl font-semibold">
             {emails.length === 1 ? "The email" : `The emails (${emails.length})`}
@@ -364,6 +370,7 @@ export default async function OpportunityPage({
             )}
           </div>
         </section>
+        </div>
       </div>
     </>
   );
