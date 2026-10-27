@@ -451,7 +451,7 @@ export async function answerForHer(
   id: string,
   rawAnswer: unknown,
   rawNote: unknown,
-  via: "spotlight" | "telegram",
+  via: "spotlight" | "telegram" | "claude",
 ): Promise<string> {
   const answer = ANSWERS.find((a) => a === rawAnswer);
   if (!answer) throw new EditError("Choose Interested, Pass or Questions.");

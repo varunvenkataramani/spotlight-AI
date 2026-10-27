@@ -13,7 +13,7 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 - **Gmail** is checked every minute in that same run, through Gmail's change history (no Pub/Sub needed).
 - **Database migrations** run automatically on every production deploy (`vercel-build`).
 
-## What works today (Milestones 1 to 5a)
+## What works today (Milestones 1 to 6)
 
 - Google sign-in for exactly two admins (allow-list), with PKCE, signed httpOnly cookies, and a re-check on every request.
 - The complete database schema, with safety rules enforced by Postgres itself: one row per Gmail message, an append-only activity log, drafts that can't be marked sent without a recorded approval, and de-duplicated alerts.
@@ -30,7 +30,9 @@ Everything runs on **Vercel** with a **Supabase** Postgres database; there is no
 - **Flag for her**: the manager puts an offer to her with a note. She gets it with **Interested / Pass / Questions** buttons in Telegram, in Spotlight's overview and on the offer; a question she types in Telegram is saved on the offer. Her answer reaches the manager straight away. Nothing is accepted or declined for her.
 - Automated checks on every push (see `.github/workflows/ci.yml`).
 
-Not built yet: reply drafts (5b, needs the Claude API key) and the Claude connector (6).
+- **Claude connector**: add Spotlight to the Claude app (Settings → Connectors → Add custom connector, address shown in Spotlight's Settings) and ask about offers from your phone: today's briefing, finding offers, full details with their source words, and on request notes, status, reminders, snoozing, flagging for her and recording her answer. Claude signs in through Spotlight's own "Allow" page; it can't send email or accept, confirm or decline anything. Disconnect any time in Settings.
+
+Not built yet: reply drafts (5b, needs the Claude API key).
 
 ## Project layout
 
@@ -94,7 +96,11 @@ Open `db/setup/supabase_scheduler.sql`, replace `PASTE_CRON_SECRET_HERE` and `YO
 - **Phone notifications:** each admin opens **Settings → Alerts** on their phone and turns notifications on. On iPhone, first add Spotlight to the Home Screen from Safari's Share menu, then open it from there.
 - **Who the actress is:** **Settings → Admins**. "Flag for her" sends offers to that account.
 
-### 6. Run locally (optional)
+### 6. Claude connector (optional)
+
+Each admin, on a computer: claude.ai → **Settings → Connectors → Add custom connector**, name it Spotlight, paste `https://YOUR-APP.vercel.app/api/mcp`, press **Connect** and choose **Allow**. It then works in the Claude mobile app too. Custom connectors need a paid Claude plan.
+
+### 7. Run locally (optional)
 
 ```bash
 cp .env.example .env.local   # fill it in; APP_URL=http://localhost:3000
@@ -118,6 +124,7 @@ bash scripts/test/gmail-e2e.sh  # after npm run build: the app against a fake Go
 bash scripts/test/ai-e2e.sh     # after npm run build: AI sorting against a fake Claude, 40+ checks
 bash scripts/test/dashboard-e2e.sh  # after npm run build: every dashboard action, filters, guards
 bash scripts/test/alerts-e2e.sh     # after npm run build: alerts against a fake Telegram and a fake phone push service (needs jq)
+bash scripts/test/connector-e2e.sh  # after npm run build: the Claude connector, playing Claude's part (needs jq, openssl)
 ```
 
 All of these run on every push in GitHub Actions.

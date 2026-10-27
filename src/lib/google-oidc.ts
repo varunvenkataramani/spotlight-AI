@@ -6,7 +6,8 @@ export const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
 
-export type OAuthStart = { state: string; codeVerifier: string };
+/** `next`: a same-site page to return to after signing in (for example "Allow Claude"). */
+export type OAuthStart = { state: string; codeVerifier: string; next?: string };
 
 export function createOAuthStart(): OAuthStart {
   return {

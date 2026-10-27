@@ -196,7 +196,7 @@ function describe(item: TimelineItem): React.ReactNode {
       return `${who} withdrew the question to her`;
     case "her_answer": {
       const label = { interested: "Interested", pass: "Pass", questions: "Has questions" }[str(d.answer)] ?? str(d.answer);
-      const via = d.via === "telegram" ? " (in Telegram)" : "";
+      const via = d.via === "telegram" ? " (in Telegram)" : d.via === "claude" ? " (in Claude)" : "";
       return (
         <>
           <span className="font-medium">{who}</span> answered: {label}

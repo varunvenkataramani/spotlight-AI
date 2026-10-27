@@ -105,6 +105,20 @@ export async function runTick(): Promise<TickResult> {
       if (!(error instanceof ConfigError)) console.error("Alerts failed:", error instanceof Error ? error.message : "unknown error");
     }
 
+    // 4. Housekeeping for the Claude connector: expired codes and tokens, and app registrations never used.
+    try {
+      await query(`DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 day'`);
+      await query(`DELETE FROM oauth_tokens WHERE expires_at < now() - interval '1 day'`);
+      await query(
+        `DELETE FROM oauth_clients c WHERE c.created_at < now() - interval '1 day'
+           AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = c.id)`,
+      );
+      result.tasks.cleanup = "ok";
+    } catch (error) {
+      result.tasks.cleanup = "failed";
+      console.error("Cleanup failed:", error instanceof Error ? error.message : "unknown error");
+    }
+
     result.durationMs = Date.now() - started;
     return result;
   } finally {

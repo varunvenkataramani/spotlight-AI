@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AiPanel } from "@/components/AiPanel";
 import { AlertsPanel } from "@/components/AlertsPanel";
+import { ConnectorPanel } from "@/components/ConnectorPanel";
 import { Flash } from "@/components/detail";
 import { InboxPanel } from "@/components/InboxPanel";
 import { PageHeader, StatusDot, formatIST } from "@/components/ui";
@@ -9,6 +10,8 @@ import { getInboxStatus, type InboxStatus } from "@/server/gmail.ts";
 import { getSystemHealth } from "@/server/health.ts";
 import { getAiOverview, type AiOverview } from "@/server/opportunities.ts";
 import { getAlertSettings, type AlertSettings } from "@/server/alerts.ts";
+import { listConnections, type Connection } from "@/server/oauth.ts";
+import { mcpResource } from "@/lib/oauth/oauth.ts";
 import { requireAdmin } from "@/server/session.ts";
 import { listAdmins, type AdminRow } from "@/server/users.ts";
 
@@ -27,8 +30,15 @@ export default async function SettingsPage({
   let inbox: InboxStatus | null = null;
   let ai: AiOverview | null = null;
   let alerts: AlertSettings | null = null;
+  let connections: Connection[] | null = null;
   if (health.database === "ok") {
-    [admins, inbox, ai, alerts] = await Promise.all([listAdmins(), getInboxStatus(), getAiOverview(), getAlertSettings(me)]);
+    [admins, inbox, ai, alerts, connections] = await Promise.all([
+      listAdmins(),
+      getInboxStatus(),
+      getAiOverview(),
+      getAlertSettings(me),
+      listConnections(me.userId),
+    ]);
   }
   const lastLogin = new Map(admins.map((a) => [a.email, a.last_login_at]));
 
@@ -47,6 +57,7 @@ export default async function SettingsPage({
       <div className="space-y-6">
         {health.database === "ok" && <InboxPanel inbox={inbox} outcome={outcome} />}
         {alerts && <AlertsPanel s={alerts} isTalent={alerts.talentEmail === me.email} />}
+        {connections && <ConnectorPanel url={mcpResource(config.appUrl)} connections={connections} />}
         {ai && <AiPanel ai={ai} />}
 
         <section className="rounded-2xl border border-line bg-surface p-6">

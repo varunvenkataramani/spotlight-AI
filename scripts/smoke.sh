@@ -83,6 +83,13 @@ for path in /api/settings /api/push; do
   [[ "$loc" =~ ^30[0-9]\ .*/login ]] && pass "$path requires sign-in" || fail "$path is not protected: $loc"
 done
 
+# 13. The Claude connector is discoverable and locked.
+code=$(curl -s -o /tmp/as.json -w "%{http_code}" "$BASE/.well-known/oauth-authorization-server")
+[ "$code" = "200" ] && grep -q '"code_challenge_methods_supported":\["S256"\]' /tmp/as.json && pass "OAuth discovery is served" || fail "oauth metadata: $code"
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","id":1,"method":"ping"}' "$BASE/api/mcp")
+[ "$code" = "401" ] && pass "the connector needs a token" || fail "mcp without token: $code"
+grep -q "Can" <<<"$(curl -s "$BASE/oauth/authorize")" && pass "the connect page refuses a link without an app" || fail "authorize without params"
+
 echo
 if [ "$fails" -ne 0 ]; then
   echo "--- web log ---"; tail -40 /tmp/web.log
