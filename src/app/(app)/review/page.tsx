@@ -22,6 +22,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const [opportunities, emails] = await Promise.all([listOpportunities({ onlyReview: true }), listReviewEmails()]);
   const aiOn = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
   const total = opportunities.length + emails.length;
+  const failed = emails.filter((e) => e.processing_error?.startsWith("Couldn't be sorted automatically:")).length;
 
   return (
     <>
@@ -34,6 +35,17 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
         }
       />
       <Flash done={done} error={error} />
+
+      {failed > 0 && aiOn && (
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gel/60 bg-gel-soft/40 px-5 py-4">
+          <p className="max-w-2xl text-sm leading-relaxed">
+            {`${failed} ${failed === 1 ? "email wasn't" : "emails weren't"} sorted because of a problem reaching Claude, not because the AI was unsure.`}
+          </p>
+          <form method="post" action="/api/emails/retry">
+            <button className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper hover:bg-ink-soft">Sort them again</button>
+          </form>
+        </div>
+      )}
 
       {total === 0 && (
         <EmptyState title="Nothing to review">

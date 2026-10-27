@@ -137,6 +137,8 @@ function answer(kase, step, received) {
           });
     case "auth":
       return { status: 401 };
+    case "credit":
+      return { status: 400 };
     default:
       return t ? triage("unrelated", 0.9) : extraction({});
   }
@@ -170,6 +172,13 @@ const server = http.createServer(async (req, res) => {
     const out = answer(kase, step, received);
 
     if (out && typeof out === "object" && "status" in out && typeof out.status === "number" && !("classification" in out)) {
+      if (out.status === 400) {
+        // What Claude says when the account has no credit left.
+        return send(res, 400, {
+          type: "error",
+          error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits." },
+        });
+      }
       return send(res, out.status, { type: "error", error: { type: out.status === 401 ? "authentication_error" : "overloaded_error" } });
     }
     const text = typeof out === "string" ? out : JSON.stringify(out);

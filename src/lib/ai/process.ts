@@ -236,10 +236,15 @@ async function handleFailure(email: EmailRow, attempt: number, error: unknown, c
   }
   if (error instanceof ClaudeApiError && error.isAccountProblem) {
     await query(`UPDATE emails SET processing_state = 'pending', processing_attempts = processing_attempts - 1 WHERE id = $1`, [email.id]);
+    const problem = error.accountProblem;
     throw new AiAccountError(
-      error.status === 401
-        ? "Claude rejected the API key. Check ANTHROPIC_API_KEY in Vercel."
-        : "Claude refused the request for this account (check credit and billing at console.anthropic.com).",
+      problem === "credit"
+        ? "The Claude account is out of credit. Add credit at console.anthropic.com → Billing; sorting carries on by itself within a minute."
+        : problem === "model"
+          ? "Claude doesn't offer one of the AI models to this account. Check ANTHROPIC_TRIAGE_MODEL and ANTHROPIC_EXTRACT_MODEL in Vercel, or remove them to use the defaults."
+          : error.status === 401
+            ? "Claude rejected the API key. Check ANTHROPIC_API_KEY in Vercel."
+            : "Claude refused the request for this account (check credit and billing at console.anthropic.com).",
     );
   }
   if (error instanceof InvalidAnswerError) {

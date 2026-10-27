@@ -160,6 +160,22 @@ page /review | grep -q "quick question" && pass "review page lists unsure emails
 page /settings | grep -q "Claude rejected the API key" && pass "settings shows the key problem" || fail "settings AI status missing"
 page /mail | grep -q ">Offer<" && pass "synced mail shows what the AI decided" || fail "no sorting labels on synced mail"
 
+# --- Round 5: an account out of credit pauses sorting; emails set aside by API problems can be sorted again ---
+sql "UPDATE emails SET processing_state = 'processed' WHERE gmail_message_id = 'm-auth'" > /dev/null
+add m-credit t-credit "" c@example.com "[case:credit] hello" "Hello."
+tick > /dev/null
+[ "$(sql "SELECT processing_state || '|' || processing_attempts FROM emails WHERE gmail_message_id = 'm-credit'")" = "pending|0" ] \
+  && pass "no credit leaves the email waiting instead of setting it aside" || fail "credit: $(sql "SELECT processing_state, processing_attempts, processing_error FROM emails WHERE gmail_message_id = 'm-credit'")"
+page /settings | grep -q "out of credit" && pass "settings says the account is out of credit" || fail "credit message missing"
+sql "UPDATE emails SET processing_state = 'needs_review', processing_attempts = 1, processing_error = 'Couldn''t be sorted automatically: Claude answered 400 (invalid_request_error)' WHERE gmail_message_id = 'm-credit'" > /dev/null
+page /review | grep -q "Sort them again" && pass "Needs review offers to sort API failures again" || fail "no retry button"
+r=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" "$BASE/api/emails/retry")
+[[ "$r" == 303*"done=1+email+goes+back"* ]] && [ "$(sql "SELECT processing_state || '|' || processing_attempts FROM emails WHERE gmail_message_id = 'm-credit'")" = "pending|0" ] \
+  && pass "and puts them back in the queue" || fail "retry: $r"
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Cookie: $SESSION" -H "Origin: https://evil.example" "$BASE/api/emails/retry")
+[ "$code" = "403" ] && pass "sorting again can't be triggered from another site" || fail "retry cross-site: $code"
+sql "UPDATE emails SET processing_state = 'processed' WHERE gmail_message_id = 'm-credit'" > /dev/null
+
 echo
 if [ "$fails" -ne 0 ]; then
   echo "--- web log ---"; tail -40 /tmp/web-ai.log

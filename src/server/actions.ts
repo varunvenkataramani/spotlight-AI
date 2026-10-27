@@ -506,6 +506,26 @@ export async function cancelReminder(admin: AdminSession, id: string, reminderId
 
 const REMINDER_TIME = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
+/**
+ * "Sort them again": emails set aside because Claude couldn't be reached or refused the request
+ * (not because the AI was unsure) go back to be sorted automatically.
+ */
+export async function retryFailedSorting(admin: AdminSession): Promise<string> {
+  return tx(async (c) => {
+    const r = await c.query(
+      `UPDATE emails SET processing_state = 'pending', processing_attempts = 0, processing_error = NULL, processing_not_before = NULL
+       WHERE processing_state = 'needs_review' AND processing_error LIKE 'Couldn''t be sorted automatically:%'`,
+    );
+    const n = r.rowCount ?? 0;
+    if (n === 0) return "Nothing to sort again.";
+    await c.query(`INSERT INTO activities (actor_type, actor_user_id, kind, detail) VALUES ('user', $1, 'sorting_retried', $2)`, [
+      admin.userId,
+      JSON.stringify({ emails: n }),
+    ]);
+    return `${n} ${n === 1 ? "email goes" : "emails go"} back to be sorted. They're read a few at a time, so give it a few minutes.`;
+  });
+}
+
 export async function markOpened(id: string): Promise<void> {
   await getPool().query(`UPDATE opportunities SET is_read = true WHERE id = $1 AND NOT is_read`, [id]);
 }
