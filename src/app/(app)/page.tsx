@@ -7,6 +7,7 @@ import { getOverviewCounts, listFlagged, listRunway, type FlaggedItem, type Over
 import { requireAdmin } from "@/server/session.ts";
 import { listOpportunities, listRecentChanges, type OpportunityCard, type RecentChange } from "@/server/opportunities.ts";
 import { formatDay, payText } from "@/lib/format.ts";
+import { VERDICT_LABEL } from "@/lib/ai/credibility.ts";
 
 export const metadata: Metadata = { title: "Stage" };
 
@@ -215,6 +216,11 @@ function Spotlit({ o }: { o: OpportunityCard }) {
           </span>
           {o.category_name && <span className="text-stage/70">{o.category_name}</span>}
           {!o.is_read && <span className="text-stage/70">· unread</span>}
+          {o.credibility_verdict && o.credibility_verdict !== "genuine" && (
+            <Link href={`/opportunities/${o.id}#trust`} className={`rounded-full px-2.5 py-1 tracking-wide ${o.credibility_verdict === "doubtful" ? "bg-[#b3261e] text-ink" : "border border-stage/40 text-stage"}`}>
+              {VERDICT_LABEL[o.credibility_verdict]}
+            </Link>
+          )}
         </div>
         <p className="mt-4 font-display text-4xl font-bold leading-none tracking-tight text-balance md:text-5xl">{o.title}</p>
         <p className="mt-2 text-base text-stage/70">{[o.organization ?? o.sender_name, what, o.location].filter(Boolean).join(" · ")}</p>

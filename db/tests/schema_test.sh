@@ -40,6 +40,8 @@ check "unknown status is rejected" "update opportunities set status='maybe'" err
 check "a spam scan can't run with Spam reading off" "update gmail_accounts set spam_scan_pending = true where id = '$A'" error
 check "spam scan runs once Spam reading is on" "update gmail_accounts set include_spam = true, spam_scan_pending = true where id = '$A'" ok
 check "a new inbox records when Google granted access" "select 1 / count(*)::int from gmail_accounts where id = '$A' and authorized_at > now() - interval '1 hour'" ok
+check "a credibility verdict must be one of the three" "update opportunities set credibility = '{\"verdict\":\"great\",\"checks\":[]}' where id = '$O'" error
+check "a well-formed credibility checklist is accepted" "update opportunities set credibility = '{\"verdict\":\"careful\",\"checks\":[]}' where id = '$O'" ok
 check "verified field needs a source quote" "insert into extracted_fields(opportunity_id,field_name,value_text,is_verified) values ('$O','budget','75000',true)" error
 check "duplicate notification is refused" "insert into notifications(user_id,event_key,channel,title) values ('$U','new:1','push','x'),('$U','new:1','push','x')" error
 check "search finds an opportunity by brand" "select 1/(count(*))::int from opportunities where search @@ plainto_tsquery('simple','glow')" ok

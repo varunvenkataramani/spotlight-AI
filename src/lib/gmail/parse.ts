@@ -21,6 +21,15 @@ export type GmailMessage = {
 
 export type Address = { name: string | null; email: string };
 
+/** What Gmail itself verified about the sender (from the Authentication-Results header Google adds). */
+export type AuthResult = {
+  spf: string | null;
+  dkim: string | null;
+  dmarc: string | null;
+  /** Domains whose DKIM signature passed. */
+  dkimDomains: string[];
+};
+
 export type ParsedEmail = {
   gmailMessageId: string;
   gmailThreadId: string;
@@ -37,6 +46,10 @@ export type ParsedEmail = {
   labels: string[];
   hasAttachments: boolean;
   attachmentNames: string[];
+  /** Null when Google added no Authentication-Results header. */
+  auth: AuthResult | null;
+  /** Sent through a mailing tool: it carries List-Unsubscribe, List-Id or a bulk Precedence header. */
+  bulk: boolean;
 };
 
 export const MAX_BODY_CHARS = 100_000;
@@ -203,6 +216,30 @@ function walk(part: GmailPart | undefined, acc: Collected): void {
   else if (mime === "text/html") acc.html.push(text);
 }
 
+/**
+ * Gmail's verdicts on SPF, DKIM and DMARC. Only the header Google itself added counts: it's the
+ * topmost Authentication-Results from mx.google.com. Copies a sender planted further down, or a
+ * forwarder's ARC copies, are ignored, since anyone can write those.
+ */
+export function parseAuthResults(headers: GmailHeader[] | undefined): AuthResult | null {
+  const h = headers?.find((x) => x.name.toLowerCase() === "authentication-results");
+  if (!h || !/^\s*mx\.google\.com\s*;/i.test(h.value)) return null;
+  const v = h.value.replace(/\([^)]*\)/g, " "); // drop comments like "(google.com: domain of ... designates ...)"
+  const result = (method: string) => v.match(new RegExp(`\\b${method}=([a-z]+)`, "i"))?.[1]?.toLowerCase() ?? null;
+  const dkimDomains: string[] = [];
+  // header.i can be "@domain" or "someone@domain"; header.d is the bare domain.
+  for (const m of v.matchAll(/\bdkim=pass\b[^;]*?\bheader\.(?:i|d)=(?:[a-z0-9._%+-]*@)?([a-z0-9.-]+)/gi)) dkimDomains.push(m[1]!.toLowerCase());
+  return { spf: result("spf"), dkim: result("dkim"), dmarc: result("dmarc"), dkimDomains: [...new Set(dkimDomains)] };
+}
+
+export function isBulkMail(headers: GmailHeader[] | undefined): boolean {
+  return (
+    headerValue(headers, "List-Unsubscribe") !== undefined ||
+    headerValue(headers, "List-Id") !== undefined ||
+    /^\s*(bulk|list|junk)\b/i.test(headerValue(headers, "Precedence") ?? "")
+  );
+}
+
 export function parseGmailMessage(message: GmailMessage): ParsedEmail {
   const headers = message.payload?.headers;
   const acc: Collected = { plain: [], html: [], attachments: [] };
@@ -235,5 +272,7 @@ export function parseGmailMessage(message: GmailMessage): ParsedEmail {
     labels: message.labelIds ?? [],
     hasAttachments: acc.attachments.length > 0,
     attachmentNames: acc.attachments,
+    auth: parseAuthResults(headers),
+    bulk: isBulkMail(headers),
   };
 }

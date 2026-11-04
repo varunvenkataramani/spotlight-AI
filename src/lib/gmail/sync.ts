@@ -312,8 +312,8 @@ export async function storeEmail(accountId: string, email: ParsedEmail, isHistor
     `INSERT INTO emails (
        gmail_account_id, gmail_message_id, gmail_thread_id, rfc_message_id, in_reply_to,
        from_name, from_email, reply_to, to_emails, cc_emails, subject, snippet, body_text,
-       received_at, gmail_labels, has_attachments, attachment_names, is_historical, processing_state)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'pending')
+       received_at, gmail_labels, has_attachments, attachment_names, is_historical, processing_state, auth, is_bulk)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'pending',$19,$20)
      ON CONFLICT (gmail_account_id, gmail_message_id) DO NOTHING`,
     [
       accountId,
@@ -334,6 +334,8 @@ export async function storeEmail(accountId: string, email: ParsedEmail, isHistor
       email.hasAttachments,
       email.attachmentNames.map((a) => clean(a)!),
       isHistorical,
+      email.auth === null ? null : JSON.stringify(email.auth),
+      email.bulk,
     ],
   );
 }

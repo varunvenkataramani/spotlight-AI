@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { payText } from "@/lib/format.ts";
 import type { OpportunityCard as Card } from "@/server/opportunities.ts";
+import { VERDICT_LABEL } from "@/lib/ai/credibility.ts";
+import { VERDICT_CHIP } from "@/components/TrustPanel";
 
 const PRIORITY: Record<Card["priority"], { label: string; className: string }> = {
   high: { label: "High priority", className: "bg-gel text-stage" },
@@ -58,6 +60,12 @@ export function OpportunityCard({ o }: { o: Card }) {
       <span aria-hidden="true" className={`absolute left-0 top-0 h-[3px] ${LIGHT[o.priority].className}`} style={{ width: LIGHT[o.priority].width }} />
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className={`rounded-full px-2.5 py-1 font-semibold ${p.className}`}>{p.label}</span>
+        {o.credibility_verdict && o.credibility_verdict !== "genuine" && (
+          <Link href={`/opportunities/${o.id}#trust`} className={`rounded-full px-2 py-0.5 font-semibold ${VERDICT_CHIP[o.credibility_verdict]}`}>
+            {VERDICT_LABEL[o.credibility_verdict]}
+          </Link>
+        )}
+        {o.credibility_verdict === "genuine" && <span className={`rounded-full px-2 py-0.5 font-semibold ${VERDICT_CHIP.genuine}`}>{VERDICT_LABEL.genuine}</span>}
         {o.category_name && <span className="text-muted">{o.category_name}</span>}
         {o.from_historical && <span className="rounded-full border border-line px-2 py-0.5 text-muted">Earlier mail</span>}
         {emails > 1 && <span className="text-muted">· {emails} emails</span>}

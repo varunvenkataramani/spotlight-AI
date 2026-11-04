@@ -8,6 +8,7 @@ import { getDetail, type Detail, type FieldSource, type ReminderRow } from "@/se
 import { markOpened } from "@/server/actions.ts";
 import { listDrafts } from "@/server/drafts.ts";
 import { ReplyPanel } from "@/components/ReplyPanel";
+import { TrustPanel } from "@/components/TrustPanel";
 import { isUuid } from "@/server/request-guard.ts";
 import { requireAdmin, type AdminSession } from "@/server/session.ts";
 
@@ -187,6 +188,8 @@ export default async function OpportunityPage({
           <HerCall o={o} me={me} talentEmail={talentEmail} back={back} />
 
           <Reminders id={id} reminders={reminders} me={me} back={back} />
+
+          <TrustPanel id={id} credibility={o.credibility} senderList={o.sender_list} back={back} />
 
           <section aria-labelledby="h-why">
             <h2 id="h-why" className="font-display text-xl font-semibold">Why this priority</h2>

@@ -34,10 +34,17 @@ export function ruleRedFlags(input: {
   organization: string | null;
   /** Gmail's labels on the email; SPAM means Gmail itself filed it as spam. */
   labels?: string[];
+  /** Gmail's sender checks, when known. */
+  auth?: { dmarc: string | null; spf: string | null; dkim: string | null } | null;
 }): RedFlag[] {
   const flags: RedFlag[] = [];
   // Gmail's own spam filter sees far more mail than we do: a person should look before replying.
   if (input.labels?.includes("SPAM")) flags.push({ flag: "Gmail put this in Spam", evidence: "Found in the Spam folder", severity: "high", source: "rule" });
+  // Gmail checked the sender's domain and it failed: the From address may be forged.
+  const a = input.auth;
+  if (a && (a.dmarc === "fail" || (a.spf === "fail" && a.dkim !== "pass"))) {
+    flags.push({ flag: `Failed Gmail's check that it really comes from ${domainOf(input.fromEmail) ?? "that address"}`, evidence: `DMARC ${a.dmarc ?? "none"}, SPF ${a.spf ?? "none"}`, severity: "high", source: "rule" });
+  }
   const text = `${input.subject ?? ""}\n${input.body}`;
   const fromDomain = domainOf(input.fromEmail);
   const replyDomain = domainOf(input.replyTo);
