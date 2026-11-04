@@ -33,12 +33,18 @@ export function getProfile(ctx: GmailContext) {
   return call<{ emailAddress: string; historyId: string; messagesTotal?: number }>(ctx, "profile");
 }
 
-export function listMessages(ctx: GmailContext, opts: { q: string; pageToken?: string; maxResults?: number }) {
+export function listMessages(ctx: GmailContext, opts: { q: string; pageToken?: string; maxResults?: number; includeSpam?: boolean }) {
   return call<{ messages?: Array<{ id: string; threadId: string }>; nextPageToken?: string; resultSizeEstimate?: number }>(
     ctx,
     "messages",
-    { q: opts.q, pageToken: opts.pageToken, maxResults: String(opts.maxResults ?? 100), includeSpamTrash: "false" },
+    // Spam can only be listed with includeSpamTrash; the query itself keeps Trash out.
+    { q: opts.q, pageToken: opts.pageToken, maxResults: String(opts.maxResults ?? 100), includeSpamTrash: opts.includeSpam ? "true" : "false" },
   );
+}
+
+/** The Gmail search for the mail Spotlight reads: the inbox, plus Spam when an admin turned that on. */
+export function mailQuery(includeSpam: boolean, after: Date): string {
+  return `${includeSpam ? "{in:inbox in:spam}" : "in:inbox"} after:${Math.floor(after.getTime() / 1000)}`;
 }
 
 export type HistoryPage = {
@@ -47,12 +53,13 @@ export type HistoryPage = {
   historyId: string;
 };
 
-export function listHistory(ctx: GmailContext, opts: { startHistoryId: string; pageToken?: string }) {
+export function listHistory(ctx: GmailContext, opts: { startHistoryId: string; pageToken?: string; includeSpam?: boolean }) {
   return call<HistoryPage>(ctx, "history", {
     startHistoryId: opts.startHistoryId,
     pageToken: opts.pageToken,
     historyTypes: "messageAdded",
-    labelId: "INBOX",
+    // History filters by one label at most; with Spam on, read all additions and filter below.
+    labelId: opts.includeSpam ? undefined : "INBOX",
     maxResults: "500",
   });
 }
@@ -61,14 +68,18 @@ export function getMessage(ctx: GmailContext, id: string) {
   return call<GmailMessage>(ctx, `messages/${encodeURIComponent(id)}`, { format: "full" });
 }
 
-/** Message ids added to the inbox in a page of history, in order, without duplicates. */
-export function inboxAdditions(page: HistoryPage): string[] {
+/** Message ids added to the inbox (and to Spam, when that's on) in a page of history, in order, without duplicates. */
+export function inboxAdditions(page: HistoryPage, includeSpam = false): string[] {
   const seen = new Set<string>();
   for (const h of page.history ?? []) {
     for (const added of h.messagesAdded ?? []) {
       const labels = added.message.labelIds;
+      if (labels?.includes("DRAFT")) continue;
+      if (labels?.includes("SPAM")) {
+        if (includeSpam) seen.add(added.message.id);
+        continue;
+      }
       if (labels && !labels.includes("INBOX")) continue;
-      if (labels && (labels.includes("SPAM") || labels.includes("DRAFT"))) continue;
       seen.add(added.message.id);
     }
   }

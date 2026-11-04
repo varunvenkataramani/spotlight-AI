@@ -18,6 +18,9 @@ import {
 } from "./rules.ts";
 import { alertMessage, isPermanentTelegramFailure, telegram } from "./telegram.ts";
 import { isAllowedPushEndpoint, sendPush, type PushSubscriptionKeys } from "./webpush.ts";
+import { inboxHealth, type InboxHealthInput } from "../gmail/health.ts";
+
+const WHEN = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 export type AlertReport = { created: number; sent: number; failed: number; waiting: number };
 
@@ -219,21 +222,39 @@ export async function collectEvents(c: pg.PoolClient, now: Date): Promise<AlertE
     });
   }
 
-  // The inbox stopped working: once a day until it's reconnected.
-  const broken = await c.query<{ id: string; email: string }>(`SELECT id, email FROM gmail_accounts WHERE status IN ('needs_reconnect', 'revoked')`);
+  // The inbox stopped working (once a day until fixed), or Google's weekly limit is about to end it (once per grant).
+  const inboxes = await c.query<InboxHealthInput & { id: string; email: string }>(
+    `SELECT id, email, status, last_synced_at, consecutive_failures, authorized_at, connected_at FROM gmail_accounts WHERE status <> 'disconnected'`,
+  );
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(now);
-  for (const g of broken.rows) {
-    events.push({
-      key: `gmail_reconnect:${g.id}:${today}`,
-      kind: "gmail_reconnect",
-      opportunityId: null,
-      title: "Gmail needs reconnecting",
-      body: `Spotlight can't read ${g.email} until someone reconnects it in Settings. New offers won't show up until then.`,
-      url: "/settings",
-      audience: "everyone",
-      urgent: false,
-      actions: [],
-    });
+  for (const g of inboxes.rows) {
+    const h = inboxHealth(g, now);
+    const base = { opportunityId: null, url: "/settings#gmail", audience: "everyone" as const, urgent: false, actions: [] };
+    if (h.state === "needs_reconnect") {
+      events.push({
+        ...base,
+        key: `gmail_reconnect:${g.id}:${today}`,
+        kind: "gmail_reconnect",
+        title: "Gmail needs reconnecting",
+        body: `Spotlight can't read ${g.email} until someone reconnects it in Settings. New offers won't show up until then.`,
+      });
+    } else if (h.state === "stalled") {
+      events.push({
+        ...base,
+        key: `gmail_stalled:${g.id}:${today}`,
+        kind: "gmail_stalled",
+        title: "Gmail stopped syncing",
+        body: `Spotlight hasn't been able to read ${g.email} since ${WHEN.format(h.since)}. Open Settings to see why; reconnecting usually fixes it.`,
+      });
+    } else if (h.state === "expiring") {
+      events.push({
+        ...base,
+        key: `gmail_reconnect:${g.id}:expiring:${(g.authorized_at ?? g.connected_at).toISOString()}`,
+        kind: "gmail_expiring",
+        title: "Reconnect Gmail today",
+        body: `Google ends Spotlight's access to ${g.email} on ${WHEN.format(h.endsAt)} (its weekly limit while the Google app is in testing). Reconnect in Settings now so no offers are missed.`,
+      });
+    }
   }
   return events;
 }

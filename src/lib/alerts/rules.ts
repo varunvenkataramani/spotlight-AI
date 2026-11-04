@@ -18,6 +18,8 @@ export type AlertKind =
   | "her_answer"
   | "reminder"
   | "gmail_reconnect"
+  | "gmail_stalled"
+  | "gmail_expiring"
   | "test";
 
 /** A tap-to-answer button on a Telegram message. */

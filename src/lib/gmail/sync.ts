@@ -12,6 +12,7 @@ import {
   inboxAdditions,
   listHistory,
   listMessages,
+  mailQuery,
   type GmailContext,
 } from "./api.ts";
 import { ReconnectRequiredError, refreshAccessToken, type GoogleEndpoints } from "./google.ts";
@@ -52,6 +53,9 @@ type AccountRow = {
   initial_scan_completed_at: Date | null;
   last_synced_at: Date | null;
   connected_at: Date;
+  include_spam: boolean;
+  spam_scan_pending: boolean;
+  spam_scan_page_token: string | null;
 };
 
 const msLeft = (deps: SyncDeps) => deps.deadline - Date.now();
@@ -65,7 +69,8 @@ function safeError(error: unknown): string {
 export async function syncAllInboxes(deps: SyncDeps): Promise<SyncReport[]> {
   const accounts = await query<AccountRow>(
     `SELECT id, refresh_token_enc, access_token_enc, access_token_expires_at, history_id, scan_after,
-            scan_page_token, initial_scan_completed_at, last_synced_at, connected_at
+            scan_page_token, initial_scan_completed_at, last_synced_at, connected_at,
+            include_spam, spam_scan_pending, spam_scan_page_token
      FROM gmail_accounts WHERE status = 'connected'`,
   );
   const reports: SyncReport[] = [];
@@ -94,6 +99,9 @@ async function syncInbox(account: AccountRow, deps: SyncDeps): Promise<SyncRepor
 
     if (!account.initial_scan_completed_at && msLeft(deps) > 15_000) {
       report.queuedScan = await listScanPage(account, ctx);
+    }
+    if (account.include_spam && account.spam_scan_pending && msLeft(deps) > 15_000) {
+      report.queuedScan += await listSpamPage(account, ctx);
     }
 
     const fetched = await fetchQueued(account.id, ctx, deps);
@@ -172,14 +180,14 @@ async function pullNewMail(account: AccountRow, ctx: GmailContext, deps: SyncDep
   do {
     let page;
     try {
-      page = await listHistory(ctx, { startHistoryId: account.history_id!, pageToken });
+      page = await listHistory(ctx, { startHistoryId: account.history_id!, pageToken, includeSpam: account.include_spam });
     } catch (error) {
       // Gmail keeps about a week of history; after a long outage start again from "now"
       // and catch up on anything received since the last good sync.
       if (error instanceof GmailApiError && error.status === 404) return recoverMissedMail(account, ctx, deps);
       throw error;
     }
-    queued += await enqueue(account.id, inboxAdditions(page), false, "history");
+    queued += await enqueue(account.id, inboxAdditions(page, account.include_spam), false, "history");
     latest = page.historyId;
     pageToken = page.nextPageToken;
   } while (pageToken && msLeft(deps) > 10_000);
@@ -195,7 +203,7 @@ async function recoverMissedMail(account: AccountRow, ctx: GmailContext, deps: S
   let pageToken: string | undefined;
   let queued = 0;
   do {
-    const page = await listMessages(ctx, { q: `in:inbox after:${Math.floor(since.getTime() / 1000)}`, pageToken });
+    const page = await listMessages(ctx, { q: mailQuery(account.include_spam, since), pageToken, includeSpam: account.include_spam });
     queued += await enqueue(account.id, (page.messages ?? []).map((m) => m.id), false, "recovery");
     pageToken = page.nextPageToken;
   } while (pageToken && msLeft(deps) > 10_000);
@@ -206,9 +214,10 @@ async function recoverMissedMail(account: AccountRow, ctx: GmailContext, deps: S
 async function listScanPage(account: AccountRow, ctx: GmailContext): Promise<number> {
   const after = account.scan_after ?? account.connected_at;
   const page = await listMessages(ctx, {
-    q: `in:inbox after:${Math.floor(after.getTime() / 1000)}`,
+    q: mailQuery(account.include_spam, after),
     pageToken: account.scan_page_token ?? undefined,
     maxResults: SCAN_PAGE_SIZE,
+    includeSpam: account.include_spam,
   });
   const ids = (page.messages ?? []).map((m) => m.id);
   const queued = await enqueue(account.id, ids, true, "initial_scan");
@@ -219,6 +228,23 @@ async function listScanPage(account: AccountRow, ctx: GmailContext): Promise<num
          initial_scan_completed_at = CASE WHEN $2::text IS NULL THEN now() ELSE NULL END
      WHERE id = $1`,
     [account.id, page.nextPageToken ?? null, ids.length],
+  );
+  return queued;
+}
+
+/** After Spam reading is turned on: one page of the last 30 days of spam (Gmail empties Spam after 30 days anyway). */
+async function listSpamPage(account: AccountRow, ctx: GmailContext): Promise<number> {
+  const page = await listMessages(ctx, {
+    q: `in:spam after:${Math.floor((Date.now() - 30 * 86_400_000) / 1000)}`,
+    pageToken: account.spam_scan_page_token ?? undefined,
+    maxResults: SCAN_PAGE_SIZE,
+    includeSpam: true,
+  });
+  // Earlier spam is treated like the first scan: shown, but it never sets off alerts.
+  const queued = await enqueue(account.id, (page.messages ?? []).map((m) => m.id), true, "initial_scan");
+  await query(
+    `UPDATE gmail_accounts SET spam_scan_page_token = $2::text, spam_scan_pending = ($2::text IS NOT NULL) WHERE id = $1 AND include_spam`,
+    [account.id, page.nextPageToken ?? null],
   );
   return queued;
 }
