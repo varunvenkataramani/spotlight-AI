@@ -117,6 +117,59 @@ curl -s -X POST "$FAKE/_control/new-mail" -d '{"id":"new-3"}' > /dev/null
 tick > /dev/null
 [ "$(sql "SELECT count(*) FROM emails WHERE gmail_message_id='new-3'")" = "1" ] && pass "sync resumes after reconnecting" || fail "no sync after reconnect"
 
+# --- A broken inbox is impossible to miss ---------------------------------------------------
+page() { curl -s -H "Cookie: $SESSION" "$BASE$1"; }
+[ "$(sql "SELECT authorized_at > now() - interval '5 minutes' FROM gmail_accounts")" = "t" ] && pass "reconnecting records when Google granted access" || fail "authorized_at not set on reconnect"
+curl -s "$BASE/api/health" | grep -q '"inbox":"ok"' && pass "the health check says the inbox is fine" || fail "health: $(curl -s "$BASE/api/health")"
+page "/" | grep -qE "Gmail (disconnected|not syncing)|Reconnect Gmail today" && fail "a warning bar shows while all is well" || pass "no warning bar while all is well"
+
+curl -s -X POST "$FAKE/_control/fail-gmail" -d '{"on":true}' > /dev/null
+tick > /dev/null; tick > /dev/null; tick > /dev/null
+[ "$(sql "SELECT status || ':' || (consecutive_failures >= 3) FROM gmail_accounts")" = "connected:true" ] && pass "repeated failures are counted" || fail "failures: $(sql "SELECT status, consecutive_failures FROM gmail_accounts")"
+page "/" | grep -q "Gmail not syncing" && pass "every page warns when Gmail quietly stops syncing" || fail "no stalled banner"
+[ "$(sql "SELECT count(*) FROM notifications WHERE kind = 'gmail_stalled' AND channel = 'in_app'")" -ge 1 ] && pass "and an alert goes out" || fail "no stalled alert: $(sql "SELECT kind FROM notifications")"
+curl -s "$BASE/api/health" | grep -q '"inbox":"stalled"' && pass "the health check reports it" || fail "health while stalled"
+curl -s -X POST "$FAKE/_control/fail-gmail" -d '{"on":false}' > /dev/null
+tick > /dev/null
+page "/" | grep -q "Gmail not syncing" && fail "stalled banner stays after recovery" || pass "the warning clears once sync works again"
+
+sql "UPDATE gmail_accounts SET authorized_at = now() - interval '6 days 12 hours'" > /dev/null
+tick > /dev/null
+[ "$(sql "SELECT count(*) FROM notifications WHERE kind = 'gmail_expiring' AND channel = 'in_app'")" = "1" ] && pass "a day before Google's weekly limit, an alert says to reconnect" || fail "no expiry alert"
+page "/" | grep -q "Reconnect Gmail today" && pass "and every page says so" || fail "no expiry banner"
+tick > /dev/null
+[ "$(sql "SELECT count(*) FROM notifications WHERE kind = 'gmail_expiring' AND channel = 'in_app'")" = "1" ] && pass "only once" || fail "expiry alert repeated"
+connect good-code > /dev/null
+page "/" | grep -q "Reconnect Gmail today" && fail "expiry banner after reconnecting" || pass "reconnecting starts a fresh week"
+
+curl -s -X POST "$FAKE/_control/revoke" > /dev/null
+sql "UPDATE gmail_accounts SET access_token_expires_at = now()" > /dev/null
+tick > /dev/null
+page "/opportunities" | grep -q "Gmail disconnected" && pass "a disconnected inbox is flagged on every page" || fail "no disconnected banner"
+[ "$(sql "SELECT count(*) FROM notifications WHERE kind = 'gmail_reconnect' AND channel = 'in_app'")" -ge 1 ] && pass "with an alert" || fail "no reconnect alert"
+connect good-code > /dev/null
+tick > /dev/null
+
+# --- Spam: off by default, read when turned on ---------------------------------------------------
+curl -s -X POST "$FAKE/_control/new-mail" -d '{"id":"spam-1","labelIds":["SPAM"]}' > /dev/null
+tick > /dev/null
+[ "$(sql "SELECT count(*) FROM emails WHERE gmail_message_id = 'spam-1'")" = "0" ] && pass "Spam isn't read unless asked" || fail "spam stored while off"
+r=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" -d "action=spam&on=1" "$BASE/api/settings")
+[[ "$r" == 303*"done="* ]] && [ "$(sql "SELECT include_spam || ':' || spam_scan_pending FROM gmail_accounts")" = "true:true" ] \
+  && pass "an admin can turn Spam reading on" || fail "turn spam on: $r / $(sql "SELECT include_spam, spam_scan_pending FROM gmail_accounts")"
+tick > /dev/null; tick > /dev/null
+[ "$(sql "SELECT count(*) FROM emails WHERE gmail_message_id = 'spam-1' AND 'SPAM' = ANY(gmail_labels)")" = "1" ] && pass "recent spam is read once it's on" || fail "spam backfill"
+[ "$(sql "SELECT spam_scan_pending FROM gmail_accounts")" = "f" ] && pass "the one-off spam read finishes" || fail "spam scan still pending"
+curl -s -X POST "$FAKE/_control/new-mail" -d '{"id":"spam-2","labelIds":["SPAM"]}' > /dev/null
+tick > /dev/null
+[ "$(sql "SELECT count(*) FROM emails WHERE gmail_message_id = 'spam-2' AND NOT is_historical")" = "1" ] && pass "new spam arrives like new mail" || fail "new spam not read"
+page "/settings" | grep -q "Stop reading Spam" && pass "Settings shows the Spam switch" || fail "no spam switch"
+curl -s -o /dev/null -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" -d "action=spam&on=0" "$BASE/api/settings"
+curl -s -X POST "$FAKE/_control/new-mail" -d '{"id":"spam-3","labelIds":["SPAM"]}' > /dev/null
+tick > /dev/null
+[ "$(sql "SELECT count(*) FROM emails WHERE gmail_message_id = 'spam-3'")" = "0" ] && [ "$(sql "SELECT include_spam FROM gmail_accounts")" = "f" ] \
+  && pass "and back off" || fail "spam still read after turning off"
+
 # --- Only one inbox at a time ----------------------------------------------------------
 loc=$(connect other-code)
 [[ "$loc" == *"gmail=other_inbox_connected"* ]] && pass "a second inbox is refused" || fail "second inbox: $loc"

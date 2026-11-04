@@ -145,6 +145,24 @@ function Connected({ inbox }: { inbox: InboxStatus }) {
             )}
           </dd>
         </div>
+        <div className="flex flex-wrap items-start gap-3 py-3">
+          <StatusDot tone={inbox.includeSpam ? "ok" : "idle"} />
+          <dt className="w-32 shrink-0 font-medium">Spam folder</dt>
+          <dd className="min-w-0 space-y-2 text-muted">
+            <p>
+              {inbox.includeSpam
+                ? `Read too.${inbox.spamScanPending ? " Still reading the last 30 days of spam." : ""} Anything Gmail put in Spam waits in To check, marked so you look before replying.`
+                : "Not read. Genuine offers sometimes land in Spam, and so do most scams. Turn this on to read it too: those emails wait in To check, marked as spam."}
+            </p>
+            <form method="post" action="/api/settings">
+              <input type="hidden" name="action" value="spam" />
+              <input type="hidden" name="on" value={inbox.includeSpam ? "0" : "1"} />
+              <button className="rounded-full border border-line px-4 py-1.5 text-sm font-medium text-ink hover:border-ink/30">
+                {inbox.includeSpam ? "Stop reading Spam" : "Also read Spam"}
+              </button>
+            </form>
+          </dd>
+        </div>
         {inbox.stuck > 0 && (
           <div className="flex flex-wrap items-start gap-3 py-3">
             <StatusDot tone="warn" />

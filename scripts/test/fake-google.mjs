@@ -17,6 +17,7 @@ const state = {
   revoked: false,
   revokeCalls: 0,
   tokenRefreshes: 0,
+  failGmail: false, // every Gmail API call answers 500, to test a quietly broken sync
 };
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64url");
@@ -171,6 +172,10 @@ const server = http.createServer(async (req, res) => {
     state.accessToken = "revoked";
     return send(res, 200, {});
   }
+  if (path === "/_control/fail-gmail" && req.method === "POST") {
+    state.failGmail = JSON.parse((await readBody(req)) || "{}").on !== false;
+    return send(res, 200, {});
+  }
   if (path === "/_control/stats") {
     return send(res, 200, { revokeCalls: state.revokeCalls, tokenRefreshes: state.tokenRefreshes, historyId: state.historyId });
   }
@@ -180,6 +185,7 @@ const server = http.createServer(async (req, res) => {
     if (req.headers.authorization !== `Bearer ${state.accessToken}`) {
       return send(res, 401, { error: { status: "UNAUTHENTICATED" } });
     }
+    if (state.failGmail) return send(res, 500, { error: { status: "INTERNAL" } });
     const rest = path.slice("/gmail/v1/users/me/".length);
 
     if (rest === "profile") return send(res, 200, { emailAddress: state.tokenEmail, historyId: String(state.historyId) });
@@ -187,10 +193,13 @@ const server = http.createServer(async (req, res) => {
     if (rest === "messages") {
       const q = url.searchParams.get("q") ?? "";
       const after = Number(q.match(/after:(\d+)/)?.[1] ?? 0) * 1000;
-      if (!q.includes("in:inbox")) return send(res, 400, { error: { status: "INVALID_ARGUMENT" } });
+      const wantInbox = q.includes("in:inbox");
+      // Like Gmail: spam is only listed when includeSpamTrash is set.
+      const wantSpam = q.includes("in:spam") && url.searchParams.get("includeSpamTrash") === "true";
+      if (!wantInbox && !q.includes("in:spam")) return send(res, 400, { error: { status: "INVALID_ARGUMENT" } });
       const all = [...scanIds, ...[...state.extra.keys()]].filter((id) => {
         const m = message(id);
-        return m && m.labelIds.includes("INBOX") && Number(m.internalDate) > after;
+        return m && ((wantInbox && m.labelIds.includes("INBOX")) || (wantSpam && m.labelIds.includes("SPAM"))) && Number(m.internalDate) > after;
       });
       const start = Number(url.searchParams.get("pageToken") ?? 0);
       const size = Number(url.searchParams.get("maxResults") ?? 100);
@@ -204,7 +213,8 @@ const server = http.createServer(async (req, res) => {
     if (rest === "history") {
       const startId = Number(url.searchParams.get("startHistoryId"));
       if (startId < state.minValidHistoryId) return send(res, 404, { error: { status: "NOT_FOUND" } });
-      const events = state.events.filter((e) => e.historyId > startId);
+      const label = url.searchParams.get("labelId");
+      const events = state.events.filter((e) => e.historyId > startId && (!label || e.labelIds.includes(label)));
       return send(res, 200, {
         history: events.map((e) => ({ messagesAdded: [{ message: { id: e.id, threadId: `t-${e.id}`, labelIds: e.labelIds } }] })),
         historyId: String(state.historyId),

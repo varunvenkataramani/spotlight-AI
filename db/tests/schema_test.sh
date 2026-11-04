@@ -37,6 +37,9 @@ check "draft cannot be sent without approval" "insert into drafts(opportunity_id
 check "draft sent with approval is accepted" "insert into drafts(opportunity_id,mode,status,sent_at,approved_by,approved_by_email,approved_at,gmail_sent_message_id,to_email) values ('$O','decline','sent',now(),'$U','a@x.com',now(),'m0','p@x.com')" ok
 check "budget max below min is rejected" "update opportunities set amount_min=50000, amount_max=10000" error
 check "unknown status is rejected" "update opportunities set status='maybe'" error
+check "a spam scan can't run with Spam reading off" "update gmail_accounts set spam_scan_pending = true where id = '$A'" error
+check "spam scan runs once Spam reading is on" "update gmail_accounts set include_spam = true, spam_scan_pending = true where id = '$A'" ok
+check "a new inbox records when Google granted access" "select 1 / count(*)::int from gmail_accounts where id = '$A' and authorized_at > now() - interval '1 hour'" ok
 check "verified field needs a source quote" "insert into extracted_fields(opportunity_id,field_name,value_text,is_verified) values ('$O','budget','75000',true)" error
 check "duplicate notification is refused" "insert into notifications(user_id,event_key,channel,title) values ('$U','new:1','push','x'),('$U','new:1','push','x')" error
 check "search finds an opportunity by brand" "select 1/(count(*))::int from opportunities where search @@ plainto_tsquery('simple','glow')" ok

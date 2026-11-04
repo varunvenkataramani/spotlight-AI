@@ -193,6 +193,7 @@ async function processOne(email: EmailRow, ctx: Context): Promise<void> {
         subject: email.subject,
         body: email.body_text ?? "",
         organization: verified.text.organization.value || null,
+        labels: email.gmail_labels,
       }),
       verified.aiRedFlags,
     );

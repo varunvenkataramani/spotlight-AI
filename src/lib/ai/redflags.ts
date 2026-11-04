@@ -32,8 +32,12 @@ export function ruleRedFlags(input: {
   subject: string | null;
   body: string;
   organization: string | null;
+  /** Gmail's labels on the email; SPAM means Gmail itself filed it as spam. */
+  labels?: string[];
 }): RedFlag[] {
   const flags: RedFlag[] = [];
+  // Gmail's own spam filter sees far more mail than we do: a person should look before replying.
+  if (input.labels?.includes("SPAM")) flags.push({ flag: "Gmail put this in Spam", evidence: "Found in the Spam folder", severity: "high", source: "rule" });
   const text = `${input.subject ?? ""}\n${input.body}`;
   const fromDomain = domainOf(input.fromEmail);
   const replyDomain = domainOf(input.replyTo);
