@@ -201,7 +201,7 @@ r=$(post "/api/opportunities/$OFFER" action=status status=interested back=//evil
 
 # --- Credibility: checks on every offer, one card across senders, not genuine / trusted ----------------------
 [ -n "$(col "$OFFER" "credibility->>'verdict'")" ] && pass "every offer gets a credibility checklist" || fail "no credibility on the offer"
-page "/opportunities/$OFFER" | grep -q "Can we trust it?" && pass "the offer page shows it" || fail "no trust panel"
+grep -q "Can we trust it?" <<<"$(page "/opportunities/$OFFER")" && pass "the offer page shows it" || fail "no trust panel"
 add d-agency t-agency "Deals Desk" deals@adbuzz.example "[case:offer] Glow Labs brief for Priya" \
   "Hi Ananya, we would love you to create 1 Instagram reel and 2 stories for our new serum. Budget: ₹75,000 (negotiable). Usage: 3 months on our social pages. Shoot in Mumbai. Please confirm by Friday."
 tick
@@ -214,7 +214,7 @@ post "/api/opportunities/$AGENCY" action=duplicate decision=merge > /dev/null
 r=$(post "/api/opportunities/$OFFER" action=trust on=1)
 [[ "$r" == 303*"done="* ]] && sql "SELECT value::text FROM preferences WHERE key = 'trusted_senders'" | grep -q '"domain:glowlabs.in"' \
   && pass "a sender can be marked trusted, by company domain" || fail "trust: $r"
-page "/opportunities/$OFFER" | grep -q "You marked this sender as trusted" && pass "and the checklist says so" || fail "trusted check missing"
+grep -q "You marked this sender as trusted" <<<"$(page "/opportunities/$OFFER")" && pass "and the checklist says so" || fail "trusted check missing"
 
 r=$(post "/api/opportunities/$SCAM" action=not_genuine)
 [[ "$r" == 303*"done="* ]] && [ "$(col "$SCAM" is_irrelevant)" = "t" ] && sql "SELECT value::text FROM preferences WHERE key = 'blocked_senders'" | grep -q '"address:netflix.castings.india@gmail.com"' \
@@ -223,8 +223,8 @@ add d-scam2 t-scam2 "Casting Team" netflix.castings.india@gmail.com "[case:scam]
 tick
 [ "$(sql "SELECT processing_state FROM emails WHERE gmail_message_id = 'd-scam2'")" = "skipped" ] && [ -z "$(opp_for d-scam2)" ] \
   && pass "their next email is set aside without being sorted" || fail "blocked sender: $(sql "SELECT processing_state FROM emails WHERE gmail_message_id = 'd-scam2'")"
-page "/mail" | grep -q "Sender marked not genuine" && pass "and Mail says why" || fail "mail label"
-page "/settings" | grep -q "netflix.castings.india@gmail.com" && pass "Settings lists the marked senders" || fail "settings senders list"
+grep -q "Sender marked not genuine" <<<"$(page "/mail")" && pass "and Mail says why" || fail "mail label"
+grep -q "netflix.castings.india@gmail.com" <<<"$(page "/settings")" && pass "Settings lists the marked senders" || fail "settings senders list"
 r=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" --data-urlencode "action=forget_sender" --data-urlencode "sender=address:netflix.castings.india@gmail.com" "$BASE/api/settings")
 [[ "$r" == 303*"done="* ]] && ! sql "SELECT value::text FROM preferences WHERE key = 'blocked_senders'" | grep -q netflix && pass "and a mark can be undone" || fail "forget sender: $r"
 r=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" --data-urlencode "action=forget_sender" --data-urlencode "sender=not a key" "$BASE/api/settings")
