@@ -5,6 +5,7 @@ import type pg from "pg";
 import { computePriority, EMPTY_PREFERENCES, type Preferences } from "./priority.ts";
 import type { RedFlag } from "./redflags.ts";
 import type { Classification } from "./schemas.ts";
+import { refreshCredibility } from "./credibility-store.ts";
 
 const DEADLINE_KINDS = ["date:reply_by", "date:deadline", "date:audition", "date:shoot", "date:event_start"];
 
@@ -106,4 +107,5 @@ export async function rescoreOpportunity(client: pg.PoolClient, oppId: string, p
     `UPDATE opportunities SET next_deadline_at = $2, priority = $3, priority_score = $4, priority_reasons = $5 WHERE id = $1`,
     [oppId, future[0] ?? null, priority.priority, priority.score, JSON.stringify(priority.reasons)],
   );
+  await refreshCredibility(client, oppId);
 }

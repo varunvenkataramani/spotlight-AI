@@ -11,6 +11,7 @@ const LIMIT = 50;
 function sortedLabel(state: string, classification: string | null): { text: string; strong?: boolean; warn?: boolean } {
   if (state === "pending" || state === "processing" || state === "failed") return { text: "Being sorted" };
   if (state === "needs_review") return { text: "Needs review", warn: true };
+  if (state === "skipped") return { text: "Sender marked not genuine", warn: true };
   switch (classification) {
     case "new_opportunity":
     case "availability_request":

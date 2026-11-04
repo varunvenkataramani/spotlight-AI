@@ -16,6 +16,7 @@ import {
   STATUS_LABEL,
 } from "@/lib/edits.ts";
 import { formatMoney } from "@/lib/ai/priority.ts";
+import { senderKey } from "@/lib/ai/credibility.ts";
 import type { AdminSession } from "@/server/session.ts";
 
 export { EditError };
@@ -124,6 +125,90 @@ export async function reviewOpportunity(admin: AdminSession, id: string, decisio
       return "Back in the lists.";
     }
     throw new EditError("Unknown review choice.");
+  });
+}
+
+// --- Senders: not genuine / trusted ---------------------------------------------------------------------
+
+async function updateSenderList(c: pg.PoolClient, admin: AdminSession, list: "blocked_senders" | "trusted_senders", key: string, add: boolean) {
+  await c.query(
+    `INSERT INTO preferences (key, value, updated_by, updated_at) VALUES ($1, '[]'::jsonb, $2, now()) ON CONFLICT (key) DO NOTHING`,
+    [list, admin.userId],
+  );
+  await c.query(
+    `UPDATE preferences
+     SET value = CASE WHEN $3 THEN (SELECT jsonb_agg(DISTINCT x) FROM jsonb_array_elements_text(value || to_jsonb($2::text)) x)
+                      ELSE COALESCE((SELECT jsonb_agg(x) FROM jsonb_array_elements_text(value) x WHERE x <> $2), '[]'::jsonb) END,
+         updated_by = $4, updated_at = now()
+     WHERE key = $1`,
+    [list, key, add, admin.userId],
+  );
+}
+
+/** Every open offer from this sender, rescored (its credibility depends on the lists). */
+async function rescoreSender(c: pg.PoolClient, key: string) {
+  const value = key.slice(key.indexOf(":") + 1);
+  const ids = await c.query<{ id: string }>(
+    key.startsWith("domain:")
+      ? `SELECT id FROM opportunities WHERE split_part(lower(sender_email), '@', 2) = $1`
+      : `SELECT id FROM opportunities WHERE lower(sender_email) = $1`,
+    [value],
+  );
+  for (const r of ids.rows) await rescoreOpportunity(c, r.id);
+}
+
+const describeKey = (key: string) => (key.startsWith("domain:") ? `anyone at ${key.slice(7)}` : key.slice(8));
+
+/**
+ * "Not genuine": takes the offer out of the lists and sets aside future mail from that sender
+ * (a whole company domain, or one personal address) without sorting it. Nothing is sent to them.
+ */
+export async function markNotGenuine(admin: AdminSession, id: string): Promise<string> {
+  return tx(async (c) => {
+    const o = await lock(c, id);
+    const key = senderKey(o.sender_email);
+    if (!key) throw new EditError("This offer has no sender address to mark.");
+    await c.query(`UPDATE opportunities SET is_irrelevant = true WHERE id = $1`, [id]);
+    await c.query(
+      `INSERT INTO corrections (opportunity_id, field_name, old_value, new_value, corrected_by) VALUES ($1, 'classification', $2, '"suspicious"', $3)`,
+      [id, JSON.stringify(o.classification), admin.userId],
+    );
+    await updateSenderList(c, admin, "trusted_senders", key, false);
+    await updateSenderList(c, admin, "blocked_senders", key, true);
+    await log(c, id, admin, "marked_not_genuine", { sender: key });
+    await rescoreOpportunity(c, id);
+    return `Marked not genuine. New mail from ${describeKey(key)} will be set aside without becoming an offer. You can undo this in Settings.`;
+  });
+}
+
+/** "Trusted" (or undo): says so on every offer from that sender. */
+export async function trustSender(admin: AdminSession, id: string, on: boolean): Promise<string> {
+  return tx(async (c) => {
+    const o = await lock(c, id);
+    const key = senderKey(o.sender_email);
+    if (!key) throw new EditError("This offer has no sender address to mark.");
+    if (on) await updateSenderList(c, admin, "blocked_senders", key, false);
+    await updateSenderList(c, admin, "trusted_senders", key, on);
+    await log(c, id, admin, on ? "sender_trusted" : "sender_untrusted", { sender: key });
+    await rescoreSender(c, key);
+    await rescoreOpportunity(c, id);
+    return on ? `Marked ${describeKey(key)} as trusted.` : `${describeKey(key)} is no longer marked as trusted.`;
+  });
+}
+
+/** From Settings: removes a sender from either list. Mail already set aside stays where it is. */
+export async function forgetSender(admin: AdminSession, rawKey: unknown): Promise<string> {
+  const key = typeof rawKey === "string" && /^(domain|address):[^\s,]{3,200}$/.test(rawKey) ? rawKey : null;
+  if (!key) throw new EditError("That sender isn't on either list.");
+  return tx(async (c) => {
+    await updateSenderList(c, admin, "blocked_senders", key, false);
+    await updateSenderList(c, admin, "trusted_senders", key, false);
+    await c.query(`INSERT INTO activities (actor_type, actor_user_id, kind, detail) VALUES ('user', $1, 'sender_forgotten', $2)`, [
+      admin.userId,
+      JSON.stringify({ sender: key }),
+    ]);
+    await rescoreSender(c, key);
+    return `Removed ${describeKey(key)}. New mail from them is sorted as usual.`;
   });
 }
 

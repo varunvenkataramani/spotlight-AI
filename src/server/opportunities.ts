@@ -35,6 +35,8 @@ export type OpportunityCard = {
   last_activity_at: Date;
   snoozed_until: Date | null;
   is_read: boolean;
+  /** "genuine" | "careful" | "doubtful", or null before the checks first run. */
+  credibility_verdict: "genuine" | "careful" | "doubtful" | null;
 };
 
 const PRIORITY_ORDER = `CASE o.priority WHEN 'high' THEN 0 WHEN 'needs_review' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END`;
@@ -59,7 +61,7 @@ export async function listOpportunities(
             o.priority_reasons, o.red_flags, o.status, o.from_historical, o.unverified_fields,
             d.title AS possible_duplicate_title,
             (SELECT count(*) FROM opportunity_emails oe WHERE oe.opportunity_id = o.id) AS email_count,
-            o.last_activity_at, o.snoozed_until, o.is_read
+            o.last_activity_at, o.snoozed_until, o.is_read, o.credibility->>'verdict' AS credibility_verdict
      FROM opportunities o
      LEFT JOIN categories c ON c.id = o.category_id
      LEFT JOIN opportunities d ON d.id = o.possible_duplicate_of

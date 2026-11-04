@@ -212,6 +212,12 @@ function describe(item: TimelineItem): React.ReactNode {
       return `${who} marked it not relevant`;
     case "restored":
       return `${who} put it back in the lists`;
+    case "marked_not_genuine":
+      return `${who} marked it not genuine; new mail from this sender is set aside`;
+    case "sender_trusted":
+      return `${who} marked the sender as trusted`;
+    case "sender_untrusted":
+      return `${who} stopped trusting the sender`;
     case "merged":
       return `${who} merged in “${str(d.fromTitle)}” (${str(d.emails)} email${d.emails === 1 ? "" : "s"})`;
     case "duplicate_dismissed":

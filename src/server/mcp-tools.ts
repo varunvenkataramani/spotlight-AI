@@ -14,6 +14,7 @@ import {
 } from "@/server/actions.ts";
 import { getDetail } from "@/server/opportunity-detail.ts";
 import { listOpportunities, listRecentChanges, type OpportunityCard } from "@/server/opportunities.ts";
+import { VERDICT_LABEL } from "@/lib/ai/credibility.ts";
 import { getOverviewCounts, listFlagged } from "@/server/overview.ts";
 import type { AdminSession } from "@/server/session.ts";
 
@@ -31,6 +32,7 @@ function line(o: OpportunityCard): string {
     PRIORITY[o.priority],
     o.next_deadline_at ? `next date ${dateText(o.next_deadline_at)}` : null,
     o.red_flags.length ? "has warning signs" : null,
+    o.credibility_verdict ? `credibility: ${VERDICT_LABEL[o.credibility_verdict].toLowerCase()}` : null,
     o.unverified_fields.length ? `unverified: ${o.unverified_fields.join(", ")}` : null,
     o.from_historical ? "from earlier mail" : null,
   ].filter(Boolean);

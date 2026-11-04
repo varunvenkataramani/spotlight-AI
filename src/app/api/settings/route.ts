@@ -7,6 +7,8 @@ import { disconnectTelegram, saveAlertSettings, sendTestAlert, setTalent, startT
 import { backWith } from "@/server/form-redirect.ts";
 import { revokeConnection } from "@/server/oauth.ts";
 import { saveReplyPrefs } from "@/server/drafts.ts";
+import { setSpamReading } from "@/server/gmail.ts";
+import { forgetSender } from "@/server/actions.ts";
 import { isCrossSite } from "@/server/request-guard.ts";
 import { requireAdmin } from "@/server/session.ts";
 
@@ -39,6 +41,10 @@ export async function POST(request: NextRequest) {
         return (await revokeConnection(admin.userId, form.get("grant")))
           ? backWith(request, "/settings#claude", "done", "Claude is disconnected. It can't read or change anything until you connect it again.")
           : backWith(request, "/settings#claude", "error", "That connection was already removed.");
+      case "forget_sender":
+        return backWith(request, "/settings#senders", "done", await forgetSender(admin, form.get("sender")));
+      case "spam":
+        return backWith(request, "/settings#gmail", "done", await setSpamReading(admin.userId, form.get("on") === "1"));
       case "test":
         return backWith(request, back, "done", await sendTestAlert(admin));
       default:

@@ -9,6 +9,8 @@ import {
   correctField,
   EditError,
   flagForHer,
+  markNotGenuine,
+  trustSender,
   resolveDuplicate,
   reviewOpportunity,
   snooze,
@@ -49,6 +51,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const message = await reviewOpportunity(admin, id, form.get("decision"));
         return backWith(request, form.get("decision") === "not_relevant" ? safeBackPath(form.get("back"), "/opportunities") : back, "done", message);
       }
+      case "not_genuine":
+        return backWith(request, safeBackPath(form.get("back"), "/opportunities"), "done", await markNotGenuine(admin, id));
+      case "trust":
+        return backWith(request, back, "done", await trustSender(admin, id, form.get("on") !== "0"));
       case "duplicate": {
         const { message, goTo } = await resolveDuplicate(admin, id, form.get("decision"));
         return backWith(request, `/opportunities/${goTo}`, "done", message);

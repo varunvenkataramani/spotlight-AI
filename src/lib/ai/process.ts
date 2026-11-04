@@ -18,6 +18,9 @@ import {
 } from "./prompts.ts";
 import { computePriority, formatMoney, type Preferences } from "./priority.ts";
 import { loadPreferences, rescoreOpportunity } from "./rescore.ts";
+import { refreshCredibility, senderLists } from "./credibility-store.ts";
+import { senderMatches } from "./credibility.ts";
+import { domainOf, FREE_MAIL_DOMAINS } from "./redflags.ts";
 import { mergeRedFlags, ruleRedFlags, type RedFlag } from "./redflags.ts";
 import {
   extractionSchema,
@@ -74,6 +77,7 @@ type EmailRow = {
   body_text: string | null;
   received_at: Date;
   gmail_labels: string[];
+  auth: { dmarc: string | null; spf: string | null; dkim: string | null } | null;
   attachment_names: string[];
   is_historical: boolean;
   processing_attempts: number;
@@ -88,6 +92,8 @@ type Context = {
   categories: Array<CategoryInfo & { id: string }>;
   slugs: string[];
   prefs: Preferences;
+  /** Senders an admin marked "not genuine": their mail is set aside without being sorted. */
+  blocked: string[];
   /** The team's recent offer / not-offer decisions by sender, for the triage prompt. */
   decisions: string[];
   report: AiReport;
@@ -115,13 +121,14 @@ export async function processPendingEmails(deps: AiDeps): Promise<AiReport> {
     categories,
     slugs: categories.map((c) => c.slug),
     prefs: await loadPreferences(getPool()),
+    blocked: (await senderLists(getPool())).blocked,
     decisions: formatDecisions(decisionRows),
     report,
   };
 
   const batch = await query<EmailRow>(
     `SELECT id, gmail_account_id, gmail_thread_id, in_reply_to, from_name, from_email, reply_to, to_emails, subject,
-            body_text, received_at, gmail_labels, attachment_names, is_historical, processing_attempts,
+            body_text, received_at, gmail_labels, auth, attachment_names, is_historical, processing_attempts,
             classification, classification_confidence, classification_reason, triage_category
      FROM emails
      WHERE processing_state IN ('pending', 'failed') AND processing_attempts < $1
@@ -164,6 +171,16 @@ async function processOne(email: EmailRow, ctx: Context): Promise<void> {
   );
   const attempt = email.processing_attempts + 1;
 
+  // A sender someone marked "not genuine": set aside without spending an AI call on it.
+  if (senderMatches(ctx.blocked, email.from_email)) {
+    await query(
+      `UPDATE emails SET processing_state = 'skipped', processed_at = now(), processing_error = 'From a sender marked not genuine.' WHERE id = $1`,
+      [email.id],
+    );
+    ctx.report.processed++;
+    return;
+  }
+
   try {
     const triage = await getTriage(email, ctx);
     const linked = await findLinkedOpportunity(email);
@@ -193,6 +210,8 @@ async function processOne(email: EmailRow, ctx: Context): Promise<void> {
         subject: email.subject,
         body: email.body_text ?? "",
         organization: verified.text.organization.value || null,
+        labels: email.gmail_labels,
+        auth: email.auth,
       }),
       verified.aiRedFlags,
     );
@@ -390,6 +409,28 @@ async function openOpportunitiesFromSender(email: EmailRow, client?: pg.PoolClie
   return result.rows;
 }
 
+/**
+ * Open offers that might be the same one: from the same sender, from someone else at the same company
+ * domain, or naming the same company from any address (agencies passing on a brief, or a copycat).
+ * Only ever suggested to an admin; nothing is merged automatically.
+ */
+async function similarOpenOffers(email: EmailRow, organization: string | null, client: pg.PoolClient): Promise<Candidate[]> {
+  const domain = domainOf(email.from_email);
+  const businessDomain = domain && !FREE_MAIL_DOMAINS.has(domain) ? domain : null;
+  const org = organization ? normalizeForMatch(organization) : null;
+  const result = await client.query<Candidate & { same_sender: boolean }>(
+    `SELECT id, title, organization, lower(sender_email) = lower($2) AS same_sender FROM opportunities
+     WHERE gmail_account_id = $1 AND status IN ${OPEN} AND NOT is_irrelevant
+       AND last_activity_at > now() - interval '120 days'
+       AND (lower(sender_email) = lower($2)
+            OR ($3::text IS NOT NULL AND split_part(lower(sender_email), '@', 2) = $3::text)
+            OR ($4::text IS NOT NULL AND lower(btrim(regexp_replace(organization, '\\s+', ' ', 'g'))) = $4::text))
+     ORDER BY (lower(sender_email) = lower($2)) DESC, last_activity_at DESC LIMIT 10`,
+    [email.gmail_account_id, email.from_email ?? "", businessDomain, org],
+  );
+  return result.rows;
+}
+
 function words(s: string): Set<string> {
   return new Set(normalizeForMatch(s).split(/[^a-z0-9ऀ-ॿ]+/).filter((w) => w.length > 2));
 }
@@ -451,7 +492,7 @@ async function createOpportunity(
 
   // A possible duplicate is only suggested for an admin to confirm; nothing is merged automatically.
   let duplicateOf: string | null = null;
-  for (const c of await openOpportunitiesFromSender(email, client)) {
+  for (const c of await similarOpenOffers(email, nul(v.text.organization.value), client)) {
     if (looksLikeSameOffer({ title: v.title, organization: nul(v.text.organization.value) }, c)) {
       duplicateOf = c.id;
       break;
@@ -529,6 +570,7 @@ async function createOpportunity(
       JSON.stringify({ of: duplicateOf }),
     ]);
   }
+  await refreshCredibility(client, oppId);
   ctx.report.created++;
 }
 
@@ -624,6 +666,7 @@ async function attachWithoutDetails(email: EmailRow, oppId: string, ctx: Context
       [oppId, email.id],
     );
     await touchOpportunity(client, opp, email);
+    await refreshCredibility(client, oppId);
     await client.query(`UPDATE emails SET processing_state = 'processed', processed_at = now(), processing_error = NULL WHERE id = $1`, [
       email.id,
     ]);
@@ -781,6 +824,7 @@ async function updateOpportunity(
     ]);
   }
   await touchOpportunity(client, opp, email);
+  await refreshCredibility(client, oppId);
   ctx.report.updated++;
 }
 

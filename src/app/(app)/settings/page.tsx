@@ -14,6 +14,8 @@ import { listConnections, type Connection } from "@/server/oauth.ts";
 import { getReplyPrefs } from "@/server/drafts.ts";
 import { mcpResource } from "@/lib/oauth/oauth.ts";
 import { requireAdmin } from "@/server/session.ts";
+import { getPool } from "@/lib/db.ts";
+import { senderLists } from "@/lib/ai/credibility-store.ts";
 import { listAdmins, type AdminRow } from "@/server/users.ts";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -33,14 +35,16 @@ export default async function SettingsPage({
   let alerts: AlertSettings | null = null;
   let connections: Connection[] | null = null;
   let replyPrefs: { signature: string; facts: string } | null = null;
+  let senders: { trusted: string[]; blocked: string[] } | null = null;
   if (health.database === "ok") {
-    [admins, inbox, ai, alerts, connections, replyPrefs] = await Promise.all([
+    [admins, inbox, ai, alerts, connections, replyPrefs, senders] = await Promise.all([
       listAdmins(),
       getInboxStatus(),
       getAiOverview(),
       getAlertSettings(me),
       listConnections(me.userId),
       getReplyPrefs(),
+      senderLists(getPool()),
     ]);
   }
   const lastLogin = new Map(admins.map((a) => [a.email, a.last_login_at]));
@@ -59,6 +63,7 @@ export default async function SettingsPage({
 
       <div className="space-y-6">
         {health.database === "ok" && <InboxPanel inbox={inbox} outcome={outcome} />}
+        {senders && <SendersPanel {...senders} />}
         {replyPrefs && (
           <section id="replies" className="scroll-mt-8 rounded-2xl border border-line bg-surface p-6">
             <h2 className="font-display text-xl font-semibold">Reply drafts</h2>
@@ -158,5 +163,38 @@ export default async function SettingsPage({
         </button>
       </form>
     </>
+  );
+}
+
+const senderText = (key: string) => (key.startsWith("domain:") ? `Anyone at ${key.slice(7)}` : key.slice(8));
+
+/** Senders marked "not genuine" (their mail is set aside) or trusted, with a way to undo each. */
+function SendersPanel({ trusted, blocked }: { trusted: string[]; blocked: string[] }) {
+  const rows = [...blocked.map((k) => ({ k, kind: "Not genuine: mail set aside" })), ...trusted.map((k) => ({ k, kind: "Trusted" }))];
+  return (
+    <section id="senders" className="scroll-mt-24 rounded-2xl border border-line bg-surface p-6">
+      <h2 className="font-display text-xl font-semibold">Senders you've marked</h2>
+      {rows.length === 0 ? (
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          None yet. On any offer, under “Can we trust it?”, press Not genuine to set aside future mail from that sender, or Trust this sender for one you know.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line text-sm">
+          {rows.map(({ k, kind }) => (
+            <li key={k} className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <span className="min-w-0">
+                <span className="font-medium break-all">{senderText(k)}</span>
+                <span className="block text-muted">{kind}</span>
+              </span>
+              <form method="post" action="/api/settings">
+                <input type="hidden" name="action" value="forget_sender" />
+                <input type="hidden" name="sender" value={k} />
+                <button className="rounded-full border border-line px-4 py-1.5 font-medium hover:border-ink/30">Remove</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

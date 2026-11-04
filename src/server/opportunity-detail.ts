@@ -1,6 +1,8 @@
 // Everything the opportunity detail page shows, read in one place.
-import { query } from "@/lib/db.ts";
+import { getPool, query } from "@/lib/db.ts";
 import type { RedFlag } from "@/lib/ai/redflags.ts";
+import { senderKey, type Credibility } from "@/lib/ai/credibility.ts";
+import { senderLists } from "@/lib/ai/credibility-store.ts";
 
 export type Detail = {
   id: string;
@@ -52,6 +54,10 @@ export type Detail = {
   talent_response: "interested" | "pass" | "questions" | null;
   talent_response_note: string | null;
   talent_responded_at: Date | null;
+  /** The credibility checklist (null until it's first worked out). */
+  credibility: Credibility | null;
+  /** Which list this sender is on, if any. */
+  sender_list: "trusted" | "blocked" | null;
 };
 
 export type ReminderRow = { id: string; due_at: Date; note: string | null; for_user: string | null; created_by_name: string | null };
@@ -100,6 +106,9 @@ export async function getDetail(id: string) {
   );
   const opportunity = rows[0];
   if (!opportunity) return null;
+  const lists = await senderLists(getPool());
+  const key = senderKey(opportunity.sender_email);
+  opportunity.sender_list = key && lists.trusted.includes(key) ? "trusted" : key && lists.blocked.includes(key) ? "blocked" : null;
 
   const [sources, emails, timeline, categories, reminders, talent] = await Promise.all([
     query<FieldSource>(

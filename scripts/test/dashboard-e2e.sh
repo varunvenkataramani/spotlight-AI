@@ -199,6 +199,37 @@ code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Cookie: $SESSION" -H "
 r=$(post "/api/opportunities/$OFFER" action=status status=interested back=//evil.example/x)
 [[ "$r" != *"evil.example"* ]] && pass "can't be bounced to another site after a form" || fail "open redirect: $r"
 
+# --- Credibility: checks on every offer, one card across senders, not genuine / trusted ----------------------
+[ -n "$(col "$OFFER" "credibility->>'verdict'")" ] && pass "every offer gets a credibility checklist" || fail "no credibility on the offer"
+grep -q "Can we trust it?" <<<"$(page "/opportunities/$OFFER")" && pass "the offer page shows it" || fail "no trust panel"
+add d-agency t-agency "Deals Desk" deals@adbuzz.example "[case:offer] Glow Labs brief for Priya" \
+  "Hi Ananya, we would love you to create 1 Instagram reel and 2 stories for our new serum. Budget: ₹75,000 (negotiable). Usage: 3 months on our social pages. Shoot in Mumbai. Please confirm by Friday."
+tick
+AGENCY=$(opp_for d-agency)
+[ -n "$AGENCY" ] && [ "$(col "$AGENCY" possible_duplicate_of)" = "$OFFER" ] && pass "the same brief from another company's address is matched to the first card" || fail "cross-sender match: $AGENCY → $(col "$AGENCY" possible_duplicate_of)"
+post "/api/opportunities/$AGENCY" action=duplicate decision=merge > /dev/null
+[ "$(sql "SELECT count(*) FROM opportunities WHERE id = '$OFFER' AND credibility::text LIKE '%Sent by 2 people%'")" = "1" ] \
+  && pass "once merged, the checklist lists both senders" || fail "senders check: $(col "$OFFER" "credibility::text" | head -c 300)"
+
+r=$(post "/api/opportunities/$OFFER" action=trust on=1)
+[[ "$r" == 303*"done="* ]] && sql "SELECT value::text FROM preferences WHERE key = 'trusted_senders'" | grep -q '"domain:glowlabs.in"' \
+  && pass "a sender can be marked trusted, by company domain" || fail "trust: $r"
+grep -q "You marked this sender as trusted" <<<"$(page "/opportunities/$OFFER")" && pass "and the checklist says so" || fail "trusted check missing"
+
+r=$(post "/api/opportunities/$SCAM" action=not_genuine)
+[[ "$r" == 303*"done="* ]] && [ "$(col "$SCAM" is_irrelevant)" = "t" ] && sql "SELECT value::text FROM preferences WHERE key = 'blocked_senders'" | grep -q '"address:netflix.castings.india@gmail.com"' \
+  && pass "not genuine takes the card out and blocks that one personal address" || fail "not genuine: $r / $(sql "SELECT value FROM preferences WHERE key = 'blocked_senders'")"
+add d-scam2 t-scam2 "Casting Team" netflix.castings.india@gmail.com "[case:scam] Last chance" "Pay ₹5,000 today to confirm your role."
+tick
+[ "$(sql "SELECT processing_state FROM emails WHERE gmail_message_id = 'd-scam2'")" = "skipped" ] && [ -z "$(opp_for d-scam2)" ] \
+  && pass "their next email is set aside without being sorted" || fail "blocked sender: $(sql "SELECT processing_state FROM emails WHERE gmail_message_id = 'd-scam2'")"
+grep -q "Sender marked not genuine" <<<"$(page "/mail")" && pass "and Mail says why" || fail "mail label"
+grep -q "netflix.castings.india@gmail.com" <<<"$(page "/settings")" && pass "Settings lists the marked senders" || fail "settings senders list"
+r=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" --data-urlencode "action=forget_sender" --data-urlencode "sender=address:netflix.castings.india@gmail.com" "$BASE/api/settings")
+[[ "$r" == 303*"done="* ]] && ! sql "SELECT value::text FROM preferences WHERE key = 'blocked_senders'" | grep -q netflix && pass "and a mark can be undone" || fail "forget sender: $r"
+r=$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -X POST -H "Cookie: $SESSION" -H "Origin: $BASE" --data-urlencode "action=forget_sender" --data-urlencode "sender=not a key" "$BASE/api/settings")
+[[ "$r" == 303*"error="* ]] && pass "nonsense sender keys are refused" || fail "bad forget: $r"
+
 echo
 if [ "$fails" -ne 0 ]; then
   echo "--- web log ---"; tail -40 /tmp/web-dash.log
